@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { fetchProducts, upsertProduct, deleteProduct as sbDeleteProduct } from './lib/supabase';
 import { 
   Plus, Minus, Trash2, X, Search, LayoutDashboard, 
   ShoppingBag, Home, Power, Package, 
@@ -934,9 +935,58 @@ const AdminConfig = ({ config, setConfig, showToast }) => {
 // 4. APLICATIVO PRINCIPAL (ROOT COMPONENT)
 // ==========================================
 export default function App() {
-  const [products, setProducts] = useState(() => {
-    try { const saved = localStorage.getItem(`@${APP_ID}:products`); return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS; } catch(e) { return DEFAULT_PRODUCTS; }
-  });
+  // Produtos vêm do Supabase (independente do navegador)
+  const [products, setProductsState] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState(null);
+
+  const reloadProducts = useCallback(async () => {
+    try {
+      const data = await fetchProducts();
+      setProductsState(data);
+      setProductsError(null);
+    } catch (e) {
+      console.error('[Supabase] fetchProducts falhou:', e);
+      setProductsError(e.message || 'Erro ao carregar produtos');
+    } finally {
+      setProductsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadProducts();
+    // Polling para refletir mudanças do Master Control em tempo quase real
+    const t = setInterval(reloadProducts, 5000);
+    return () => clearInterval(t);
+  }, [reloadProducts]);
+
+  // Wrapper que aceita array novo OU updater (igual setState) e sincroniza com Supabase
+  const setProducts = useCallback(async (updater) => {
+    const next = typeof updater === 'function' ? updater(products) : updater;
+    const prev = products;
+    // Atualização otimista
+    setProductsState(next);
+    try {
+      const prevById = new Map(prev.map(p => [p.id, p]));
+      const nextById = new Map(next.map(p => [p.id, p]));
+      // Deletes
+      for (const p of prev) {
+        if (!nextById.has(p.id)) {
+          await sbDeleteProduct(p.id);
+        }
+      }
+      // Upserts (novos ou modificados)
+      for (const p of next) {
+        const old = prevById.get(p.id);
+        if (!old || JSON.stringify(old) !== JSON.stringify(p)) {
+          await upsertProduct(p);
+        }
+      }
+    } catch (e) {
+      console.error('[Supabase] persistência falhou, recarregando:', e);
+      reloadProducts();
+    }
+  }, [products, reloadProducts]);
   const [banners, setBanners] = useState(() => {
     try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
   });
@@ -986,7 +1036,7 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { localStorage.setItem(`@${APP_ID}:products`, JSON.stringify(products)); }, [products]);
+  // Produtos persistem no Supabase (não no localStorage)
   useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
   useEffect(() => { localStorage.setItem(`@${APP_ID}:config`, JSON.stringify(config)); }, [config]);
   useEffect(() => { localStorage.setItem(LEAD_STORAGE_KEY, JSON.stringify(leads)); }, [leads]);
