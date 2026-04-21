@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // ✅ SUPABASE — Conexão centralizada
-import { supabase } from './lib/supabaseClient';
+imporimport { supabase } from './lib/supabaseClient.js.';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
