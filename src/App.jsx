@@ -1052,10 +1052,9 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { localStorage.setItem(`@${APP_ID}:products`, JSON.stringify(products)); }, [products]);
+  // products + leads vivem no Supabase. banners e config seguem no localStorage.
   useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
   useEffect(() => { localStorage.setItem(`@${APP_ID}:config`, JSON.stringify(config)); }, [config]);
-  useEffect(() => { localStorage.setItem(LEAD_STORAGE_KEY, JSON.stringify(leads)); }, [leads]);
 
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
   useEffect(() => {
