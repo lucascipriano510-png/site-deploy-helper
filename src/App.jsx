@@ -14,8 +14,7 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
-import { supabase } from './lib/supabaseClient';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -1169,14 +1168,16 @@ export default function App() {
       .join('\n');
     const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
 
-    const { data, error } = await supabase.from('orders').insert([orderData]).select().single();
-    if (error) {
-      console.error('Erro detalhado do Supabase:', error.message, error.details);
-      showToast('Pedido não foi salvo no CRM. Verifique permissões RLS.', 'error');
-    } else {
+    try {
+      const data = await createOrder(orderData);
       console.log('Pedido salvo no banco:', orderNum, data?.id);
+      window.alert('PEDIDO SALVO NO CRM');
       showToast('Pedido registrado!');
       try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch (_) {}
+    } catch (error) {
+      console.error('Erro detalhado do Supabase:', error?.message, error?.details);
+      showToast('Pedido não foi salvo no CRM. Verifique permissões RLS.', 'error');
+      return;
     }
 
     const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;

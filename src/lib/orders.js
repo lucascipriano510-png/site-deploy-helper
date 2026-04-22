@@ -2,9 +2,30 @@ import { supabase } from './supabaseClient';
 
 // Cria um pedido novo (status pending). NÃO mexe no estoque.
 export async function createOrder({ customer, items, total, notes = '', status = 'pending' }) {
+  const safeCustomer = {
+    name: String(customer?.name || 'Cliente não informado').trim(),
+    phone: String(customer?.phone || '').replace(/\D/g, '') || '00000000000',
+    orderNumber: String(customer?.orderNumber || ''),
+    address: String(customer?.address || ''),
+  };
+  const safeItems = Array.isArray(items)
+    ? items.map((item) => ({
+        id: Number(item?.id || 0),
+        name: String(item?.name || 'Produto sem nome'),
+        sku: String(item?.sku || ''),
+        price: Number(item?.price || 0),
+        size: String(item?.size || 'U'),
+        qty: Number(item?.qty || 1),
+        image: String(item?.image || ''),
+      }))
+    : [];
+  const safeTotal = Number(total || 0);
+  const safeNotes = String(notes || '');
+  const safeStatus = String(status || 'pending');
+
   const { data, error } = await supabase
     .from('orders')
-    .insert([{ customer, items, total, notes, status }])
+    .insert([{ customer: safeCustomer, items: safeItems, total: safeTotal, notes: safeNotes, status: safeStatus }])
     .select()
     .single();
   if (error) throw error;

@@ -13,4 +13,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[supabase] Credenciais ausentes. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.')
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+})
