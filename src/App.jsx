@@ -1167,7 +1167,8 @@ export default function App() {
     }
     const itemsText = cart.map(i => `• [${i.sku}] ${i.name} (${i.size}) x${i.quantity}`).join('\n');
     const msg = `*NOVO PEDIDO: ${config.brandName}*\n*PEDIDO:* #${orderNum}\n\n*CLIENTE:* ${currentLead.name}\n*CONTATO:* ${currentLead.phone}\n\n*ITENS:*\n${itemsText}\n\n*VALOR:* R$ ${subtotal.toFixed(2)}\n*FRETE:* A combinar`;
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${config.whatsapp}&text=${encodeURIComponent(msg)}`;
+    const whatsappNumber = String(config?.whatsapp || '').replace(/\D/g, '');
+    const whatsappUrl = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}` : '';
     setTimeout(() => { setCart([]); setIsRedirecting(false); setWhatsappLink(whatsappUrl); setCheckoutOrderNumber(orderNum); setCheckoutSuccess(true); }, 600);
   };
 
