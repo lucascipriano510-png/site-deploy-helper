@@ -1158,27 +1158,28 @@ export default function App() {
     setIsRedirecting(true);
     try {
       // Prioriza o registro no banco antes de sair da página.
-      await Promise.all([
-        createOrder({
-          customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
-          items: itemsPayload,
-          total: Number(subtotal.toFixed(2)),
-          notes: '',
-        })
-      ]);
+      await createOrder({
+        customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
+        items: itemsPayload,
+        total: Number(subtotal.toFixed(2)),
+        notes: '',
+        status: 'pending',
+      });
       try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
-    } catch (err) {
-      console.error('[orders] createOrder falhou:', err);
-      showToast('Pedido enviado ao WhatsApp, mas houve falha ao salvar no painel.', 'error');
-    } finally {
+
       setWhatsappLink(whatsappUrl);
       setCheckoutOrderNumber(orderNum);
       setCheckoutSuccess(false);
       setShowLeadModal(false);
       setShowCart(false);
       setCart([]);
-      setIsRedirecting(false);
       window.location.href = whatsappUrl;
+    } catch (err) {
+      console.error('[orders] createOrder falhou:', err);
+      showToast('Falha ao salvar pedido no banco. Verifique a conexão e tente novamente.', 'error');
+      return;
+    } finally {
+      setIsRedirecting(false);
     }
   };
 

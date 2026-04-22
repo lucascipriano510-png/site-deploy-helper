@@ -1,10 +1,10 @@
 import { supabase } from './supabaseClient';
 
 // Cria um pedido novo (status pending). NÃO mexe no estoque.
-export async function createOrder({ customer, items, total, notes = '' }) {
+export async function createOrder({ customer, items, total, notes = '', status = 'pending' }) {
   const { data, error } = await supabase
     .from('orders')
-    .insert([{ customer, items, total, notes, status: 'pending' }])
+    .insert([{ customer, items, total, notes, status }])
     .select()
     .single();
   if (error) throw error;
