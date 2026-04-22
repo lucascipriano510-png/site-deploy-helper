@@ -1035,7 +1035,6 @@ export default function App() {
   const [selectedSizes, setSelectedSizes] = useState({});
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
-  const [isRedirecting, setIsRedirecting] = useState(false);
   const [currentLead, setCurrentLead] = useState({ name: '', phone: '' });
   const [toast, setToast] = useState(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -1156,36 +1155,27 @@ export default function App() {
       notes: '',
       status: 'pending',
     };
+    const itemsText = cart
+      .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
+      .join('\n');
+    const message = `Olá! Gostaria de finalizar meu pedido na ${config.brandName}.\n\n*Cliente:* ${currentLead.name}\n*WhatsApp:* ${currentLead.phone}\n\n*Itens do pedido:*\n${itemsText}\n\n*Total do pedido:* R$ ${subtotal.toFixed(2)}\n\nAguardo confirmação. Obrigado!`;
 
-    setIsRedirecting(true);
     try {
-      // 1) Persistencia primeiro
       await createOrder(orderData);
-      console.log('Pedido salvo no banco:', orderNum);
-
-      // 2) Gera link apenas apos o banco confirmar
-      const itemsText = cart
-        .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
-        .join('\n');
-      const msg = `Olá! Gostaria de finalizar meu pedido na ${config.brandName}.\n\n*Cliente:* ${currentLead.name}\n*WhatsApp:* ${currentLead.phone}\n\n*Itens do pedido:*\n${itemsText}\n\n*Total do pedido:* R$ ${subtotal.toFixed(2)}\n\nAguardo confirmação. Obrigado!`;
-      const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(msg)}`;
-
+      console.log('Sucesso no banco');
       try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
-      setWhatsappLink(whatsappUrl);
-      setCheckoutOrderNumber(orderNum);
-      setCheckoutSuccess(false);
-      setShowLeadModal(false);
-      setShowCart(false);
-      setCart([]);
-
-      // 3) Redirecionamento garantido como comando final
-      window.location.href = whatsappUrl;
-    } catch (err) {
-      console.error('[orders] createOrder falhou:', err);
-      showToast('Falha ao salvar pedido no banco. Verifique a conexão e tente novamente.', 'error');
-    } finally {
-      setIsRedirecting(false);
+    } catch (error) {
+      console.error('Erro no banco, mas vou abrir o Zap:', error);
     }
+
+    const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
+    setWhatsappLink(whatsappUrl);
+    setCheckoutOrderNumber(orderNum);
+    setCheckoutSuccess(false);
+    setShowLeadModal(false);
+    setShowCart(false);
+    setCart([]);
+    window.location.href = whatsappUrl;
   };
 
   const filteredProducts = useMemo(() => {
@@ -1528,7 +1518,7 @@ export default function App() {
                  <div className="space-y-4 relative z-10 text-left pt-6">
                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Nome Completo</label><input placeholder="Ex: João da Silva" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.name} onChange={e => setCurrentLead({...currentLead, name: e.target.value})} /></div>
                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">WhatsApp (Com DDD)</label><input placeholder="Ex: 34999999999" type="tel" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.phone} onChange={e => setCurrentLead({...currentLead, phone: e.target.value.replace(/\D/g, '')})} /></div>
-                 <button onClick={handleFinalize} disabled={isRedirecting} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation disabled:opacity-70 disabled:cursor-not-allowed">{isRedirecting ? 'Processando...' : 'Finalizar Pedido via WhatsApp'} <Zap size={14}/></button>
+                 <button onClick={handleFinalize} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation">Finalizar Pedido via WhatsApp <Zap size={14}/></button>
                 </div>
                 <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-600 flex items-center justify-center gap-1 opacity-70 mt-6"><Lock size={10}/> Ambiente 100% Seguro</p>
               </div>
