@@ -13,6 +13,8 @@ import {
   Flame, ShieldCheck, Award, CreditCard, Lock, Megaphone, ImagePlus,
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
+import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -934,18 +936,82 @@ const AdminConfig = ({ config, setConfig, showToast }) => {
 // 4. APLICATIVO PRINCIPAL (ROOT COMPONENT)
 // ==========================================
 export default function App() {
-  const [products, setProducts] = useState(() => {
-    try { const saved = localStorage.getItem(`@${APP_ID}:products`); return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS; } catch(e) { return DEFAULT_PRODUCTS; }
-  });
+  // ======= PRODUTOS: agora vivem no Supabase =======
+  const [productsRaw, setProductsRaw] = useState(DEFAULT_PRODUCTS);
+  const productsRef = useRef(DEFAULT_PRODUCTS);
+  useEffect(() => { productsRef.current = productsRaw; }, [productsRaw]);
+
+  // Carrega produtos do Supabase + polling de 5s
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const remote = await fetchProducts();
+        if (alive && Array.isArray(remote) && remote.length > 0) setProductsRaw(remote);
+      } catch (e) { console.warn('[products] fetch falhou:', e?.message); }
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  // Wrapper: ao mudar produtos local, sincroniza com Supabase (diff: upsert/delete)
+  const setProducts = (updater) => {
+    setProductsRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        const prevIds = new Set((prev || []).map(p => p.id));
+        const nextIds = new Set((next || []).map(p => p.id));
+        // upserts: produtos que mudaram ou são novos
+        (next || []).forEach(p => {
+          const old = (prev || []).find(o => o.id === p.id);
+          if (!old || JSON.stringify(old) !== JSON.stringify(p)) {
+            upsertProduct(p).catch(err => console.warn('[products] upsert falhou:', err?.message));
+          }
+        });
+        // deletes
+        (prev || []).forEach(p => { if (!nextIds.has(p.id)) deleteProductRemote(p.id).catch(err => console.warn('[products] delete falhou:', err?.message)); });
+      } catch (e) { console.warn('[products] sync falhou:', e?.message); }
+      return next;
+    });
+  };
+  const products = productsRaw;
+
   const [banners, setBanners] = useState(() => {
     try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
   });
   const [config, setConfig] = useState(() => {
     try { const saved = localStorage.getItem(`@${APP_ID}:config`); return saved ? JSON.parse(saved) : DEFAULT_CONFIG; } catch(e) { return DEFAULT_CONFIG; }
   });
-  const [leads, setLeads] = useState(() => {
-    try { const saved = localStorage.getItem(LEAD_STORAGE_KEY); return saved ? JSON.parse(saved) : []; } catch(e) { return []; }
+
+  // ======= PEDIDOS (LEADS): agora vivem no Supabase =======
+  const [leads, setLeadsState] = useState([]);
+  // Mapeia row do Supabase -> shape interno usado pelo painel
+  const mapOrderRow = (row) => ({
+    id: row.id,
+    orderNumber: (row.customer && row.customer.orderNumber) || String(row.id).slice(0, 5),
+    name: (row.customer && row.customer.name) || '',
+    phone: (row.customer && row.customer.phone) || '',
+    address: (row.customer && row.customer.address) || '',
+    date: row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : '',
+    value: Number(row.total || 0),
+    items: row.items || [],
+    status: row.status === 'confirmed' ? 'CONCLUÍDO' : row.status === 'cancelled' ? 'CANCELADO' : 'NOVO',
+    _raw: row,
   });
+  const setLeads = setLeadsState; // mantém compat
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const rows = await fetchOrders();
+        if (alive) setLeadsState(rows.map(mapOrderRow));
+      } catch (e) { console.warn('[orders] fetch falhou:', e?.message); }
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   const [cart, setCart] = useState([]);
   
   const [cartBounce, setCartBounce] = useState(false);
