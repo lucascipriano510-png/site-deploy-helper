@@ -1167,7 +1167,8 @@ export default function App() {
     }
     const itemsText = cart.map(i => `• [${i.sku}] ${i.name} (${i.size}) x${i.quantity}`).join('\n');
     const msg = `*NOVO PEDIDO: ${config.brandName}*\n*PEDIDO:* #${orderNum}\n\n*CLIENTE:* ${currentLead.name}\n*CONTATO:* ${currentLead.phone}\n\n*ITENS:*\n${itemsText}\n\n*VALOR:* R$ ${subtotal.toFixed(2)}\n*FRETE:* A combinar`;
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=${config.whatsapp}&text=${encodeURIComponent(msg)}`;
+    const whatsappNumber = String(config?.whatsapp || '').replace(/\D/g, '');
+    const whatsappUrl = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}` : '';
     setTimeout(() => { setCart([]); setIsRedirecting(false); setWhatsappLink(whatsappUrl); setCheckoutOrderNumber(orderNum); setCheckoutSuccess(true); }, 600);
   };
 
@@ -1493,29 +1494,24 @@ export default function App() {
                  <button
                    type="button"
                    onClick={() => {
-                     if (!whatsappLink) { showToast('Link do WhatsApp indisponível.', 'error'); return; }
-                     const win = window.open(whatsappLink, '_blank', 'noopener,noreferrer');
-                     if (!win) {
-                       // popup bloqueado: navega na própria aba como fallback
-                       window.location.href = whatsappLink;
-                       return;
-                     }
+                     if (!whatsappLink) { showToast('Cadastre um número de WhatsApp válido no Master Control.', 'error'); return; }
                      setShowLeadModal(false);
                      setCheckoutSuccess(false);
+                     window.location.href = whatsappLink;
                    }}
                    className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 touch-manipulation"
                  >Enviar WhatsApp <Zap size={14}/></button>
-              </div>
-            ) : (
-              <div className="animate-in">
-                <div className="text-center relative z-10 space-y-2 mt-4">
-                  <div className="w-16 h-16 bg-white text-zinc-950 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl"><ShieldCheck size={30}/></div>
-                  <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Dados de Entrega</h3>
-                  <p className="text-zinc-400 text-[10px] font-bold uppercase">Preencha os dados para concluir seu pedido.</p>
-                </div>
-                <div className="space-y-4 relative z-10 text-left pt-6">
-                  <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Nome Completo</label><input placeholder="Ex: João da Silva" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.name} onChange={e => setCurrentLead({...currentLead, name: e.target.value})} /></div>
-                  <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">WhatsApp (Com DDD)</label><input placeholder="Ex: 34999999999" type="tel" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.phone} onChange={e => setCurrentLead({...currentLead, phone: e.target.value.replace(/\D/g, '')})} /></div>
+               </div>
+             ) : (
+               <div className="animate-in">
+                 <div className="text-center relative z-10 space-y-2 mt-4">
+                   <div className="w-16 h-16 bg-white text-zinc-950 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl"><ShieldCheck size={30}/></div>
+                   <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Dados de Entrega</h3>
+                   <p className="text-zinc-400 text-[10px] font-bold uppercase">Preencha os dados para concluir seu pedido.</p>
+                 </div>
+                 <div className="space-y-4 relative z-10 text-left pt-6">
+                   <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Nome Completo</label><input placeholder="Ex: João da Silva" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.name} onChange={e => setCurrentLead({...currentLead, name: e.target.value})} /></div>
+                   <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">WhatsApp (Com DDD)</label><input placeholder="Ex: 34999999999" type="tel" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.phone} onChange={e => setCurrentLead({...currentLead, phone: e.target.value.replace(/\D/g, '')})} /></div>
                   <button onClick={handleFinalize} disabled={isRedirecting} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation">{isRedirecting ? 'Processando...' : 'Gerar Pedido'} <Zap size={14}/></button>
                 </div>
                 <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-600 flex items-center justify-center gap-1 opacity-70 mt-6"><Lock size={10}/> Ambiente 100% Seguro</p>
