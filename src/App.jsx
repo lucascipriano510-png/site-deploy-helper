@@ -1149,35 +1149,40 @@ export default function App() {
     if (!cart.length) { showToast('Sua sacola está vazia.', 'error'); return; }
     const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
     const itemsPayload = cart.map(i => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, size: i.size, qty: i.quantity, image: i.image }));
-    const itemsText = cart
-      .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
-      .join('\n');
-    const msg = `Olá! Gostaria de finalizar meu pedido na ${config.brandName}.\n\n*Cliente:* ${currentLead.name}\n*WhatsApp:* ${currentLead.phone}\n\n*Itens do pedido:*\n${itemsText}\n\n*Total do pedido:* R$ ${subtotal.toFixed(2)}\n\nAguardo confirmação. Obrigado!`;
-    const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(msg)}`;
+    const orderData = {
+      customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
+      items: itemsPayload,
+      total: Number(subtotal.toFixed(2)),
+      notes: '',
+      status: 'pending',
+    };
 
     setIsRedirecting(true);
     try {
-      // Prioriza o registro no banco antes de sair da página.
-      await createOrder({
-        customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
-        items: itemsPayload,
-        total: Number(subtotal.toFixed(2)),
-        notes: '',
-        status: 'pending',
-      });
-      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
+      // 1) Persistencia primeiro
+      await createOrder(orderData);
+      console.log('Pedido salvo no banco:', orderNum);
 
+      // 2) Gera link apenas apos o banco confirmar
+      const itemsText = cart
+        .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
+        .join('\n');
+      const msg = `Olá! Gostaria de finalizar meu pedido na ${config.brandName}.\n\n*Cliente:* ${currentLead.name}\n*WhatsApp:* ${currentLead.phone}\n\n*Itens do pedido:*\n${itemsText}\n\n*Total do pedido:* R$ ${subtotal.toFixed(2)}\n\nAguardo confirmação. Obrigado!`;
+      const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(msg)}`;
+
+      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
       setWhatsappLink(whatsappUrl);
       setCheckoutOrderNumber(orderNum);
       setCheckoutSuccess(false);
       setShowLeadModal(false);
       setShowCart(false);
       setCart([]);
+
+      // 3) Redirecionamento garantido como comando final
       window.location.href = whatsappUrl;
     } catch (err) {
       console.error('[orders] createOrder falhou:', err);
       showToast('Falha ao salvar pedido no banco. Verifique a conexão e tente novamente.', 'error');
-      return;
     } finally {
       setIsRedirecting(false);
     }
