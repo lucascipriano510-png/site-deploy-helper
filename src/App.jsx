@@ -16,6 +16,7 @@ import {
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
 import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
+import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip as ReTooltip, Cell } from 'recharts';
 
 // ==========================================
@@ -1056,14 +1057,36 @@ export default function App() {
   const [banners, setBanners] = useState(() => {
     try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
   });
-  const [config, setConfig] = useState(() => {
-    try { const saved = localStorage.getItem(`@${APP_ID}:config`); return saved ? JSON.parse(saved) : DEFAULT_CONFIG; } catch(e) { return DEFAULT_CONFIG; }
-  });
+  const [config, setConfigState] = useState(SITE_DEFAULT_CONFIG);
+  // Carrega config do Supabase + polling de 10s pra propagar mudanças pra todos
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const remote = await fetchSiteConfig();
+        if (alive && remote) setConfigState(remote);
+      } catch (e) { console.warn('[config] fetch falhou:', e?.message); }
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  // Wrapper: ao alterar config local, envia upsert pro Supabase (requer admin logado)
+  const setConfig = (updater) => {
+    setConfigState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        upsertSiteConfig(next).catch((e) => console.warn('[config] upsert falhou:', e?.message));
+      } catch (e) { /* silencioso */ }
+      return next;
+    });
+  };
 
   // ======= PEDIDOS (LEADS): agora vivem no Supabase =======
   const [leads, setLeadsState] = useState([]);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const seenOrderIdsRef = useRef(null); // Set dos IDs já vistos
+  const isAdminRef = useRef(false);
   // Mapeia row do Supabase -> shape interno usado pelo painel
   // Schema real: { id, order_number, name, phone, items (jsonb|string), value, status, created_at }
   const mapOrderRow = (row) => {
@@ -1143,7 +1166,7 @@ export default function App() {
           if (newOnes.length > 0) {
             seenOrderIdsRef.current = currentIds;
             // Só notifica se for admin logado
-            if (sessionStorage.getItem(`@${APP_ID}:admin`) === 'true') {
+            if (isAdminRef.current) {
               setNewOrdersCount((prev) => prev + newOnes.length);
               playNotifySound();
               try {
@@ -1170,11 +1193,31 @@ export default function App() {
   
   const [cartBounce, setCartBounce] = useState(false);
 
-  // --- AUTENTICAÇÃO SEGURA ---
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem(`@${APP_ID}:admin`) === 'true');
+  // --- AUTH Supabase ---
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Sincroniza sessão inicial + escuta mudanças
+  useEffect(() => {
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return;
+      const logged = !!data?.session?.user;
+      setIsAdmin(logged);
+      isAdminRef.current = logged;
+      setAuthReady(true);
+    }).catch(() => setAuthReady(true));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const logged = !!session?.user;
+      setIsAdmin(logged);
+      isAdminRef.current = logged;
+    });
+    return () => { alive = false; sub?.subscription?.unsubscribe?.(); };
+  }, []);
 
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1213,7 +1256,7 @@ export default function App() {
 
   // products + leads vivem no Supabase. banners e config seguem no localStorage.
   useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
-  useEffect(() => { localStorage.setItem(`@${APP_ID}:config`, JSON.stringify(config)); }, [config]);
+  // config agora vive no Supabase; nada pra persistir localmente
 
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
   useEffect(() => {
@@ -1236,28 +1279,36 @@ export default function App() {
     lastTapRef.current = now;
   };
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    if (loginUser === 'Fluxo034' && loginPass === 'METODOFLUXO') {
-      sessionStorage.setItem(`@${APP_ID}:admin`, 'true');
-      setIsAdmin(true);
+    if (loginLoading) return;
+    setLoginLoading(true);
+    try {
+      const email = String(loginUser || '').trim();
+      const password = String(loginPass || '');
+      if (!email || !password) { showToast('Preencha email e senha.', 'error'); return; }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       setShowAdminLogin(false);
       setLoginUser('');
       setLoginPass('');
       showToast('Acesso Concedido!', 'success');
-      // Pede permissão de notificação (silencioso se usuário recusar)
       try {
         if ('Notification' in window && Notification.permission === 'default') {
           Notification.requestPermission().catch(() => {});
         }
       } catch (e) {}
-    } else {
-      showToast('Credenciais Inválidas!', 'error');
+    } catch (err) {
+      console.error('[auth] login falhou:', err);
+      const msg = /Invalid login credentials/i.test(err?.message || '') ? 'Credenciais inválidas.' : 'Erro no login: ' + (err?.message || 'tente novamente');
+      showToast(msg, 'error');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem(`@${APP_ID}:admin`);
+  const handleLogout = async () => {
+    try { await supabase.auth.signOut(); } catch (e) {}
     setIsAdmin(false);
   };
 
@@ -1461,7 +1512,7 @@ export default function App() {
       {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[200] animate-slide-down"><div className="px-6 py-3 rounded-full font-black text-[10px] uppercase bg-white text-zinc-950 shadow-2xl">{toast.message}</div></div>}
 
       <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-2xl border-b border-white/5 px-6 py-2 flex justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.5)] h-20">
-        <button className="p-2 text-zinc-400 hover:text-white shrink-0 touch-manipulation" onClick={() => document.getElementById('search-input').focus()}><Search size={22} /></button>
+        <button className="p-2 text-zinc-400 hover:text-white shrink-0 touch-manipulation" onClick={() => document.getElementById('search-input').focus()} data-testid="btn-header-search"><Search size={22} /></button>
         
         <div className="cursor-default select-none flex-1 flex flex-col items-center justify-center mx-2 h-full relative overflow-hidden pointer-events-none">
           {config.logoUrl ? (
@@ -1471,10 +1522,15 @@ export default function App() {
           )}
         </div>
 
-        <button onClick={() => setShowCart(true)} className={`relative p-2 text-white hover:text-emerald-500 shrink-0 touch-manipulation transition-transform ${cartBounce ? 'scale-125 text-emerald-500' : 'scale-100'}`}>
-          <ShoppingBag size={24} />
-          {cart.length > 0 && <span className="absolute top-0 right-0 bg-emerald-500 text-zinc-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-zinc-950 shadow-[0_0_10px_rgba(16,185,129,0.5)]">{cart.reduce((a,i)=>a+i.quantity,0)}</span>}
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => setShowMyOrders(true)} data-testid="btn-header-my-orders" className="p-2 text-zinc-400 hover:text-emerald-500 transition-colors touch-manipulation" title="Meus Pedidos">
+            <ClipboardList size={20} />
+          </button>
+          <button onClick={() => setShowCart(true)} data-testid="btn-header-cart" className={`relative p-2 text-white hover:text-emerald-500 touch-manipulation transition-transform ${cartBounce ? 'scale-125 text-emerald-500' : 'scale-100'}`}>
+            <ShoppingBag size={24} />
+            {cart.length > 0 && <span className="absolute top-0 right-0 bg-emerald-500 text-zinc-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-zinc-950 shadow-[0_0_10px_rgba(16,185,129,0.5)]">{cart.reduce((a,i)=>a+i.quantity,0)}</span>}
+          </button>
+        </div>
       </header>
 
       {activeBanners.length > 0 && (
@@ -1495,30 +1551,35 @@ export default function App() {
         </section>
       )}
 
-      <main className="max-w-md mx-auto px-6 mt-8 space-y-8 min-h-screen">
+      <main className="max-w-md mx-auto px-6 mt-6 space-y-5 min-h-screen" data-testid="catalog-main">
         <div className="relative group">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-          <input id="search-input" placeholder="O que você procura?" className="w-full bg-zinc-900/50 backdrop-blur-sm border border-white/5 py-4 pl-14 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input id="search-input" placeholder="O que você procura?" data-testid="input-search" className="w-full bg-zinc-900/50 backdrop-blur-sm border border-white/5 py-4 pl-14 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 mask-linear touch-pan-x">
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 mask-linear touch-pan-x">
           {categories.map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat)} data-testid={`category-filter-${cat}`} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{cat}</button>
+            <button key={cat} onClick={() => setSelectedCategory(cat)} data-testid={`category-filter-${cat}`} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10 hover:border-white/30'}`}>{cat}</button>
           ))}
         </div>
 
         {availableSizes.length > 1 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mask-linear touch-pan-x items-center">
-            <span className="text-[9px] font-black uppercase text-zinc-600 tracking-widest shrink-0 pr-1">Tamanho:</span>
             {availableSizes.map(sz => (
-              <button key={sz} onClick={() => setSelectedSize(sz)} data-testid={`size-filter-${sz}`} className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedSize === sz ? 'bg-emerald-500 text-zinc-950 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{sz}</button>
+              <button key={sz} onClick={() => setSelectedSize(sz)} data-testid={`size-filter-${sz}`} className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedSize === sz ? 'bg-emerald-500 text-zinc-950 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-transparent text-zinc-600 border-white/5 hover:text-white hover:border-white/20'}`}>{sz === 'TODOS' ? 'Todos tamanhos' : sz}</button>
             ))}
           </div>
         )}
 
-        <button onClick={() => setShowMyOrders(true)} data-testid="btn-my-orders" className="w-full py-3 bg-zinc-900/50 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:border-emerald-500/30 transition-colors flex items-center justify-center gap-2">
-          <ClipboardList size={14} className="text-emerald-500"/> Meus Pedidos
-        </button>
+        {filteredProducts.length > 0 && (
+          <div className="flex items-center justify-between pt-1 animate-in">
+            <span className="text-[10px] font-black uppercase tracking-widest text-white/90">Peças Disponíveis</span>
+            <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1.5" data-testid="products-count">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              {filteredProducts.length} {filteredProducts.length === 1 ? 'peça' : 'peças'}
+            </span>
+          </div>
+        )}
 
         {filteredProducts.length === 0 ? (
            <div className="text-center py-20 opacity-50 animate-in">
@@ -1527,17 +1588,17 @@ export default function App() {
                <p className="text-[10px] text-zinc-600 uppercase mt-2">Tente buscar por outro termo ou categoria.</p>
            </div>
         ) : (
-           <div className="grid grid-cols-2 gap-4 animate-in">
-             {filteredProducts.map(product => {
+           <div className="grid grid-cols-2 gap-4" data-testid="products-grid">
+             {filteredProducts.map((product, idx) => {
                const isOutOfStock = product.stock <= 0;
                return (
-                 <div key={product.id} onClick={() => handleProductClick(product)} className={`group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 cursor-pointer active:scale-[0.98]'}`}>
+                 <div key={product.id} onClick={() => handleProductClick(product)} style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }} className={`card-enter group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`} data-testid={`product-card-${product.id}`}>
                    
                    {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
-                  {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
+                   {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
-                   <div className="aspect-[3/4] relative bg-zinc-900">
-                     <img src={product.image} className={`w-full h-full object-cover transition-all ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-90 group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+                   <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
+                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
                      
                      {isOutOfStock && (
                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
@@ -1550,7 +1611,7 @@ export default function App() {
                      )}
                    </div>
                    <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
-                     <h3 className="font-black text-zinc-400 text-[10px] uppercase line-clamp-2 leading-tight">{product.name}</h3>
+                     <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
                      <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
                    </div>
                  </div>
@@ -1611,23 +1672,23 @@ export default function App() {
 
             <div className="space-y-4 mt-8">
               <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Usuário</label>
+                <label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Email</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
-                  <input required placeholder="Digite o usuário" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
+                  <input required type="email" placeholder="seuemail@exemplo.com" autoComplete="email" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} data-testid="input-admin-email" className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
                 </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Senha</label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
-                  <input required type="password" placeholder="••••••••" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
+                  <input required type="password" placeholder="••••••••" autoComplete="current-password" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} data-testid="input-admin-password" className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
                 </div>
               </div>
             </div>
 
-            <button type="submit" className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 shadow-[0_10px_30px_rgba(16,185,129,0.2)] transition-transform touch-manipulation">
-              Autenticar <ChevronRight size={14}/>
+            <button type="submit" disabled={loginLoading} data-testid="btn-admin-login" className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 shadow-[0_10px_30px_rgba(16,185,129,0.2)] transition-transform touch-manipulation disabled:opacity-60">
+              {loginLoading ? 'Autenticando...' : <>Autenticar <ChevronRight size={14}/></>}
             </button>
           </form>
         </div>
@@ -1876,6 +1937,11 @@ export default function App() {
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         @keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-50%); } }
+        @keyframes cardEnter {
+          from { opacity: 0; transform: translateY(14px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0)     scale(1); }
+        }
+        .card-enter { animation: cardEnter 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
       `}</style>
     </div>
   );
