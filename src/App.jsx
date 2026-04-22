@@ -665,44 +665,51 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
-  const updateLeadStatus = (id, newStatus) => {
+  const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
     const oldStatus = leadToUpdate.status || 'NOVO';
-    let inventoryChanged = false;
-    let updatedProducts = [...products];
-    
-    if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
-      (leadToUpdate.items || []).forEach(cartItem => {
-        updatedProducts = updatedProducts.map(p => {
-          if (p.id !== cartItem.id) return p;
-          inventoryChanged = true;
+    try {
+      // Sistema 3.0: estoque só baixa quando admin confirma a venda (CONCLUÍDO)
+      if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
+        // monta order no formato esperado por confirmOrderSale
+        const orderForSale = {
+          id: leadToUpdate._raw?.id || leadToUpdate.id,
+          items: (leadToUpdate.items || []).map(i => ({
+            id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
+          })),
+        };
+        await confirmOrderSale(orderForSale, products);
+        // Atualiza local: marca como concluído e dá baixa local pra refletir na hora
+        setLeads(leads.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
+        // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
+        const updatedProducts = products.map(p => {
+          const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
+          if (itemsForP.length === 0) return p;
+          const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
           const newSizes = (p.sizes || []).map(s => {
             const sName = typeof s === 'string' ? s : (s.size || 'U');
             const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-            return sName === cartItem.size ? { size: sName, stock: Math.max(0, sStock - (cartItem.quantity || 0)) } : { size: sName, stock: sStock };
+            const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
+            return { size: sName, stock: Math.max(0, sStock - dec) };
           });
-          return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: (p.sales || 0) + (cartItem.quantity || 0) };
+          return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
         });
-      });
-    } else if (oldStatus === 'CONCLUÍDO' && newStatus !== 'CONCLUÍDO') {
-       (leadToUpdate.items || []).forEach(cartItem => {
-        updatedProducts = updatedProducts.map(p => {
-          if (p.id !== cartItem.id) return p;
-          inventoryChanged = true;
-          const newSizes = (p.sizes || []).map(s => {
-            const sName = typeof s === 'string' ? s : (s.size || 'U');
-            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-            return sName === cartItem.size ? { size: sName, stock: sStock + (cartItem.quantity || 0) } : { size: sName, stock: sStock };
-          });
-          return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: Math.max(0, (p.sales || 0) - (cartItem.quantity || 0)) };
-        });
-      });
+        setProducts(updatedProducts);
+        showToast('Venda confirmada e estoque atualizado!');
+      } else if (newStatus === 'CANCELADO') {
+        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
+        setLeads(leads.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
+        showToast('Pedido cancelado.');
+      } else {
+        // Outros status (NOVO, EM ATENDIMENTO) — atualização só local por enquanto
+        setLeads(leads.map(l => l.id === id ? { ...l, status: newStatus } : l));
+        showToast('Status atualizado.');
+      }
+    } catch (err) {
+      console.error('[orders] update status falhou:', err);
+      showToast('Erro ao atualizar pedido.', 'error');
     }
-    const updatedLeads = leads.map(l => l.id === id ? { ...l, status: newStatus } : l);
-    setLeads(updatedLeads);
-    if (inventoryChanged) setProducts(updatedProducts);
-    showToast('Status e Estoque sincronizados!');
     setExpandedLead(null);
   };
   const statusColors = { 'NOVO': 'text-blue-500', 'EM ATENDIMENTO': 'text-amber-500', 'CONCLUÍDO': 'text-emerald-500', 'CANCELADO': 'text-red-500' };
