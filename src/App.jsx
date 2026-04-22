@@ -1147,40 +1147,49 @@ export default function App() {
 
   const handleFinalize = async () => {
     setIsLoading(true);
+    let payloadSanitizado = null;
     try {
-      if (typeof createOrder !== 'function') {
-        throw new Error('Função createOrder não foi importada corretamente.');
-      }
-
-      const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
-      const customerName = (currentLead.name || '').trim() || 'Cliente não informado';
-      const customerPhone = (currentLead.phone || '').replace(/\D/g, '') || '00000000000';
-      const itemsPayload = (cart || []).map(i => ({
-        id: i.id ?? 0,
-        name: i.name || 'Produto sem nome',
-        sku: i.sku || '',
-        price: Number(i.price || 0),
-        size: i.size || 'U',
-        qty: Number(i.quantity || 1),
-        image: i.image || ''
+      const orderNum = String(Math.floor(10000 + Math.random() * 90000));
+      const customerName = String(currentLead?.name ?? '').trim() || 'Cliente não informado';
+      const customerPhone = String(currentLead?.phone ?? '').replace(/\D/g, '') || '';
+      const totalPedido = Number(subtotal) || 0;
+      const itensNormalizados = (cart || []).map((item) => ({
+        id: Number(item?.id) || 0,
+        name: String(item?.name ?? ''),
+        sku: String(item?.sku ?? ''),
+        size: String(item?.size ?? ''),
+        price: Number(item?.price) || 0,
+        qty: Number(item?.quantity) || 0,
+        image: String(item?.image ?? '')
       }));
-      const orderData = {
-        customer: { name: customerName, phone: customerPhone, orderNumber: orderNum },
-        items: itemsPayload,
-        total: Number(subtotal.toFixed(2)),
-        notes: '',
-        status: 'pending',
+
+      payloadSanitizado = {
+        customer: JSON.stringify({
+          name: customerName,
+          phone: customerPhone,
+          orderNumber: orderNum
+        }),
+        items: JSON.stringify(itensNormalizados),
+        total: totalPedido,
+        notes: String(''),
+        status: String('pending')
       };
 
-      console.log('[checkout] payload enviado para orders:', orderData);
-      const { data, error } = await supabase.from('orders').insert([orderData]).select().single();
-      if (error) throw new Error(error.message);
-      console.log('[checkout] pedido salvo com sucesso:', data);
+      console.log('[checkout] payload sanitizado antes do insert:', payloadSanitizado);
 
-      const itemsText = cart
-        .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
+      const { data, error } = await supabase
+        .from('orders')
+        .insert([payloadSanitizado])
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+
+      console.log('[checkout] sucesso no Supabase:', data);
+
+      const itemsText = itensNormalizados
+        .map((item) => `• ${item.name} | Tam: ${item.size} | R$ ${item.price.toFixed(2)} x${item.qty}`)
         .join('\n');
-      const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
+      const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone || 'Não informado'}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${totalPedido.toFixed(2)}\nPedido: #${orderNum}`;
       const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
 
       setWhatsappLink(whatsappUrl);
@@ -1191,8 +1200,8 @@ export default function App() {
       setCart([]);
       window.location.href = whatsappUrl;
     } catch (error) {
-      console.error('[checkout] erro ao finalizar pedido:', error);
-      window.alert('Erro ao registrar pedido no CRM. Verifique o console para debug.');
+      console.error('PAYLOAD TENTADO:', payloadSanitizado, 'ERRO:', error);
+      alert('Erro Supabase: ' + error.message);
     } finally {
       setIsLoading(false);
     }
