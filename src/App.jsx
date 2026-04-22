@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { 
   Plus, Minus, Trash2, X, Search, LayoutDashboard, 
   ShoppingBag, Home, Power, Package, 
@@ -14,7 +15,7 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -65,6 +66,36 @@ const DEFAULT_CONFIG = {
     'DESIGN AUTÊNTICO E EXCLUSIVO'
   ]
 };
+
+// Fallback temporario para garantir checkout funcional no App.jsx
+const INLINE_SUPABASE_URL = 'https://tapgnlrjhrhewqlpahvg.supabase.co';
+const INLINE_SUPABASE_ANON_KEY = 'sb_publishable_XaGrDdX2df8qolf2WocwuQ_FsVP1-kW';
+const inlineSupabase = createClient(INLINE_SUPABASE_URL, INLINE_SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+});
+
+async function createOrderInline({ customer, items, total, notes = '', status = 'pending' }) {
+  const safeCustomer = {
+    name: String(customer?.name || 'Cliente não informado').trim(),
+    phone: String(customer?.phone || '').replace(/\D/g, '') || '00000000000',
+    orderNumber: String(customer?.orderNumber || ''),
+    address: String(customer?.address || ''),
+  };
+  const safeItems = Array.isArray(items) ? items : [];
+  const { data, error } = await inlineSupabase
+    .from('orders')
+    .insert([{
+      customer: safeCustomer,
+      items: safeItems,
+      total: Number(total || 0),
+      notes: String(notes || ''),
+      status: String(status || 'pending')
+    }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
 // ==========================================
 // 2. FUNÇÕES DE TRACKING E UTILITÁRIOS
@@ -1144,6 +1175,7 @@ export default function App() {
   };
 
   const handleFinalize = async () => {
+    console.log('Botão clicado!');
     const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
     const customerName = (currentLead.name || '').trim() || 'Cliente não informado';
     const customerPhone = (currentLead.phone || '').replace(/\D/g, '') || '00000000000';
@@ -1169,19 +1201,16 @@ export default function App() {
     const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
 
     try {
-      const data = await createOrder(orderData);
-      console.log('Pedido salvo no banco:', orderNum, data?.id);
-      window.alert('PEDIDO SALVO NO CRM');
-      showToast('Pedido registrado!');
+      await createOrderInline(orderData);
       try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch (_) {}
     } catch (error) {
       console.error('Erro detalhado do Supabase:', error?.message, error?.details);
       showToast('Pedido não foi salvo no CRM. Verifique permissões RLS.', 'error');
-      return;
+    } finally {
+      const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
+      console.log('Tentando WhatsApp...');
+      window.location.href = whatsappUrl;
     }
-
-    const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
-    window.location.href = whatsappUrl;
   };
 
   const filteredProducts = useMemo(() => {
