@@ -1,363 +1,1472 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Search, LayoutDashboard, ShoppingBag, Package, Box, Settings,
-  User, Lock, Check, XCircle, Trash2, Plus, Minus, X
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Plus, Minus, Trash2, X, Search, LayoutDashboard, 
+  ShoppingBag, Home, Power, Package, 
+  TrendingUp, Box, MessageCircle,
+  Zap, Share2, Info, Star, ChevronRight, ChevronLeft,
+  RefreshCcw, Layers, Settings, Tag, 
+  AlertCircle, DollarSign, MapPin, Edit3, User, Phone, 
+  CheckCircle2, Camera, Save, ArrowLeft, BarChart3,
+  LogOut, ClipboardList, Database, Filter, Eye,
+  Barcode, QrCode, AlertTriangle, Upload, Image as ImageIcon,
+  Maximize2, ZoomIn, Bell, Clock, Truck, Check, XCircle,
+  Flame, ShieldCheck, Award, CreditCard, Lock, Megaphone, ImagePlus,
+  GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 
-import { supabase } from './lib/supabaseClient';
-import { createOrder, confirmOrderSale, cancelOrder, deleteOrder } from './lib/orders';
+// ==========================================
+// 1. CONFIGURAÇÃO E DADOS INICIAIS
+// ==========================================
+const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'fluxo-dark-ultimate';
+const LEAD_STORAGE_KEY = '@fluxo-outlet:lead-data-v3';
+const BANNERS_STORAGE_KEY = `@${APP_ID}:banners`;
 
-const APP_ID = 'fluxo-dark-ultimate';
+const DEFAULT_PRODUCTS = [
+  { id: 1, sku: 'CAM-BRA-001', name: 'Camiseta Branca Basic', price: 89.90, category: 'VESTUÁRIO', image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800', stock: 25, sales: 12, sizes: [{size: 'P', stock: 5}, {size: 'M', stock: 10}, {size: 'G', stock: 10}], featured: true },
+  { id: 2, sku: 'CAL-JOG-001', name: 'Calça Jogger Tech', price: 169.90, category: 'VESTUÁRIO', image: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=800', stock: 15, sales: 8, sizes: [{size: '38', stock: 5}, {size: '40', stock: 5}, {size: '42', stock: 5}], featured: false },
+  { id: 3, sku: 'TEN-RUN-002', name: 'Tênis Running Fluxo', price: 299.90, category: 'CALÇADOS', image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800', stock: 2, sales: 45, sizes: [{size: '39', stock: 1}, {size: '41', stock: 1}], featured: true },
+  { id: 4, sku: 'BON-PRE-003', name: 'Boné Archer Black', price: 79.90, category: 'ACESSÓRIOS', image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=800', stock: 0, sales: 120, sizes: [{size: 'U', stock: 0}], featured: false }, 
+  { id: 5, sku: '9059', name: 'Calça Super Skinny Malibu Rasgada', price: 189.90, category: 'VESTUÁRIO', image: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800', stock: 10, sales: 5, sizes: [{size: '38', stock: 5}, {size: '40', stock: 5}], featured: true }
+];
 
-export default function App() {
-  // ---------- ESTADOS ----------
-  const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem(`@${APP_ID}:products`);
-    return saved ? JSON.parse(saved) : [];
-  });
+const DEFAULT_BANNERS = [
+  {
+    id: 1,
+    image: 'https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?w=1000&q=80',
+    title: 'NOVA COLEÇÃO',
+    subtitle: 'STREETWEAR PREMIUM 2026',
+    buttonText: 'VER PEÇAS',
+    active: true
+  },
+  {
+    id: 2,
+    image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=1000&q=80',
+    title: 'FRETE GRÁTIS',
+    subtitle: 'ENVIOS EXPRESSOS',
+    buttonText: 'APROVEITAR',
+    active: true
+  }
+];
 
-  const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem(`@${APP_ID}:config`);
-    return saved ? JSON.parse(saved) : {
-      brandName: 'FLUXO OUTLET',
-      whatsapp: '5534984148067',
-      marqueePhrases: ['ALTO PADRÃO EM CADA DETALHE', 'ENVIO PRIORITÁRIO', 'COLEÇÃO 2026'],
-      logoUrl: '',
-      logoZoom: 1.5
-    };
-  });
+const DEFAULT_CONFIG = {
+  brandName: 'FLUXO OUTLET',
+  whatsapp: '5534984148067', 
+  location: 'UBERABA, MG',
+  minOrder: 0.00, 
+  pixelId: 'PIXEL_FLUXO_001',
+  logoUrl: '', 
+  logoZoom: 1.5,
+  marqueePhrases: [
+    'ALTO PADRÃO EM CADA DETALHE',
+    'ENVIO PRIORITÁRIO',
+    'COLEÇÕES LIMITADAS',
+    'DESIGN AUTÊNTICO E EXCLUSIVO'
+  ]
+};
 
-  const [orders, setOrders] = useState([]);
-  const [cart, setCart] = useState([]); // [{id, name, price, image, qty}]
-  const [showCart, setShowCart] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem(`@${APP_ID}:admin`) === 'true');
-  const [adminTab, setAdminTab] = useState('dashboard');
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const lastTapRef = useRef(0);
+// ==========================================
+// 2. FUNÇÕES DE TRACKING E UTILITÁRIOS
+// ==========================================
+const trackPixel = (eventName, payload) => {
+  console.log(`[PIXEL TRACKING] 🟢 ${eventName}`, payload);
+};
 
-  // ---------- SYNC SUPABASE (5s) ----------
+// ==========================================
+// 3. COMPONENTES ADMIN DESACOPLADOS
+// ==========================================
+
+const AdminHeader = ({ handleLogout }) => (
+  <div className="bg-zinc-950 text-white px-6 py-6 flex justify-between items-center sticky top-0 z-50 border-b border-white/5">
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] relative overflow-hidden">
+        <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+        <LayoutDashboard size={20} className="text-zinc-950 relative z-10"/>
+      </div>
+      <div>
+        <h2 className="font-black italic text-lg leading-none uppercase tracking-tighter">Master Control</h2>
+        <p className="text-[9px] font-bold text-zinc-500 tracking-[0.2em] uppercase flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Operacional</p>
+      </div>
+    </div>
+    <button onClick={handleLogout} className="px-4 py-2 bg-white text-zinc-950 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+      Sair <LogOut size={12} />
+    </button>
+  </div>
+);
+
+const AdminDashboard = ({ leads, products }) => {
+  const validLeads = (leads || []).filter(l => l.status !== 'CANCELADO');
+  const totalRevenue = validLeads.reduce((a, b) => a + (b.value || 0), 0);
+  const avgTicket = validLeads.length > 0 ? (totalRevenue / validLeads.length) : 0;
+  
+  // PROTEÇÃO CONTRA CRASH: (lead.items || []) blinda o sistema contra leads antigos sem items
+  const totalItemsSold = validLeads.reduce((acc, lead) => acc + (lead.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0), 0);
+  
+  const lowStockProducts = (products || []).filter(p => p.stock > 0 && p.stock <= 3);
+  const outOfStockProducts = (products || []).filter(p => p.stock === 0);
+
+  const statusColors = { 'NOVO': 'text-blue-500 bg-blue-500/10', 'EM ATENDIMENTO': 'text-amber-500 bg-amber-500/10', 'CONCLUÍDO': 'text-emerald-500 bg-emerald-500/10', 'CANCELADO': 'text-red-500 bg-red-500/10' };
+
+  return (
+    <div className="p-6 space-y-6 animate-in pb-24">
+      <div className="bg-gradient-to-br from-emerald-900 to-zinc-950 p-6 rounded-[32px] border border-emerald-500/20 shadow-2xl relative overflow-hidden">
+        <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={180}/></div>
+        <p className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2"><TrendingUp size={12}/> Receita Global</p>
+        <h3 className="text-4xl font-black text-white italic relative z-10 tracking-tighter shadow-black drop-shadow-md">R$ {totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+        <div className="flex items-end gap-1.5 h-10 mt-6 relative z-10 opacity-60">
+           {[40, 70, 45, 90, 60, 100, 80].map((h, i) => (
+             <div key={i} className="flex-1 bg-emerald-500 rounded-t-sm" style={{ height: `${h}%` }}></div>
+           ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-zinc-900 p-5 rounded-[24px] border border-white/5 shadow-xl flex flex-col justify-between">
+          <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><ShoppingBag size={12}/> Pedidos</p>
+          <h3 className="text-2xl font-black text-white">{validLeads.length}</h3>
+        </div>
+        <div className="bg-zinc-900 p-5 rounded-[24px] border border-white/5 shadow-xl flex flex-col justify-between">
+          <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Package size={12}/> Peças Vendidas</p>
+          <h3 className="text-2xl font-black text-white">{totalItemsSold}</h3>
+        </div>
+        <div className="col-span-2 bg-zinc-900 p-5 rounded-[24px] border border-white/5 shadow-xl flex flex-col justify-between">
+          <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><BarChart3 size={12}/> Ticket Médio (TM)</p>
+          <h3 className="text-2xl font-black text-emerald-500 tracking-tighter">R$ {avgTicket.toFixed(2)}</h3>
+        </div>
+      </div>
+
+      <div className="bg-zinc-900/50 p-6 rounded-[32px] border border-white/5 space-y-4">
+         <h4 className="font-black text-[11px] uppercase tracking-widest text-white flex items-center gap-2"><Clock size={14} className="text-zinc-400"/> Pedidos Recentes</h4>
+         {(leads || []).slice(0, 4).length === 0 ? (
+             <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Nenhuma atividade ainda.</p>
+         ) : (
+             <div className="space-y-3">
+                 {(leads || []).slice(0, 4).map((l, i) => (
+                     <div key={i} className="flex justify-between items-center border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                         <div className="flex flex-col">
+                             <span className="text-[11px] font-black uppercase text-white truncate w-32">{(l.name || 'Desconhecido').split(' ')[0]}</span>
+                             <span className="text-[9px] font-bold text-zinc-500">#{l.orderNumber || '0000'}</span>
+                         </div>
+                         <div className="flex flex-col items-end gap-1">
+                             <span className="text-[11px] font-black text-emerald-500">R$ {(l.value || 0).toFixed(2)}</span>
+                             <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-full ${statusColors[l.status || 'NOVO']}`}>{l.status || 'NOVO'}</span>
+                         </div>
+                     </div>
+                 ))}
+             </div>
+         )}
+      </div>
+
+      {(lowStockProducts.length > 0 || outOfStockProducts.length > 0) && (
+        <div className="bg-zinc-900/50 p-6 rounded-[32px] border border-red-500/10 space-y-4">
+           <h4 className="font-black text-[11px] uppercase tracking-widest text-white flex items-center gap-2"><AlertTriangle size={14} className="text-amber-500"/> Alertas de Estoque</h4>
+           <div className="space-y-3">
+              {outOfStockProducts.map(p => (
+                <div key={p.id} className="flex justify-between items-center bg-red-500/10 px-4 py-3 rounded-2xl border border-red-500/20">
+                  <span className="text-[10px] font-bold text-white uppercase truncate pr-4">{p.name}</span>
+                  <span className="text-[9px] font-black bg-red-500 text-white px-2 py-1 rounded-full shrink-0">ESGOTADO</span>
+                </div>
+              ))}
+              {lowStockProducts.map(p => (
+                <div key={p.id} className="flex justify-between items-center bg-amber-500/10 px-4 py-3 rounded-2xl border border-amber-500/20">
+                  <span className="text-[10px] font-bold text-white uppercase truncate pr-4">{p.name}</span>
+                  <span className="text-[9px] font-black text-amber-500 shrink-0">Resta(m) {p.stock}</span>
+                </div>
+              ))}
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AdminInventory = ({ products, setProducts, showToast }) => {
+  const [editMode, setEditMode] = useState(null); 
+  const [invSearch, setInvSearch] = useState('');
+  const [previewImage, setPreviewImage] = useState('');
+  const [formSizes, setFormSizes] = useState([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedProduct, setScannedProduct] = useState(null);
+  const [scannedSize, setScannedSize] = useState('');
+  const [cameraActive, setCameraActive] = useState(false);
+  const [isScannerReady, setIsScannerReady] = useState(false);
+  const scannerInputRef = useRef(null);
+
   useEffect(() => {
-    const syncData = async () => {
-      const { data: oData } = await supabase
-        .from('orders').select('*').order('created_at', { ascending: false });
-      if (oData) setOrders(oData);
+    if (editMode && editMode !== 'new') {
+      setPreviewImage(editMode.image);
+      let normalizedSizes = [];
+      if (editMode.sizes && editMode.sizes.length > 0) {
+         if (typeof editMode.sizes[0] === 'string') {
+            const stockPerSize = Math.floor((editMode.stock || 0) / editMode.sizes.length);
+            normalizedSizes = editMode.sizes.map(s => ({ size: s, stock: stockPerSize }));
+         } else {
+            normalizedSizes = editMode.sizes; 
+         }
+      }
+      setFormSizes(normalizedSizes.length > 0 ? normalizedSizes : [{ size: 'U', stock: editMode.stock || 0 }]);
+    } else if (editMode === 'new') {
+      setPreviewImage('');
+      setFormSizes([{ size: 'P', stock: 5 }, { size: 'M', stock: 5 }]);
+    }
+  }, [editMode]);
 
-      const { data: pData } = await supabase
-        .from('products').select('*').order('id', { ascending: false });
-      if (pData && pData.length > 0) {
-        setProducts(pData);
-        localStorage.setItem(`@${APP_ID}:products`, JSON.stringify(pData));
+  useEffect(() => {
+    if (showScanner && cameraActive) {
+      if (window.Html5Qrcode) {
+        setIsScannerReady(true);
+        return;
+      }
+      const existingScript = document.getElementById('barcode-scanner-lib');
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.id = 'barcode-scanner-lib';
+        script.src = 'https://unpkg.com/html5-qrcode';
+        script.async = true;
+        script.onload = () => setIsScannerReady(true);
+        script.onerror = () => {
+           showToast("Falha na rede ao carregar motor óptico.", "error");
+           setCameraActive(false);
+        };
+        document.head.appendChild(script);
+      }
+    }
+  }, [showScanner, cameraActive]);
+
+  useEffect(() => {
+    let html5QrCode;
+    let isComponentMounted = true;
+
+    const initCamera = async () => {
+      if (!showScanner || !cameraActive || !isScannerReady || scannedProduct) return;
+      
+      try {
+        html5QrCode = new window.Html5Qrcode("reader");
+        
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.tagName === 'VIDEO') {
+                        node.setAttribute('playsinline', 'true');
+                        node.setAttribute('webkit-playsinline', 'true');
+                        node.setAttribute('muted', 'true');
+                    }
+                });
+            });
+        });
+        const readerElement = document.getElementById('reader');
+        if(readerElement) observer.observe(readerElement, { childList: true, subtree: true });
+
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          { 
+              fps: 15,
+              qrbox: function(viewfinderWidth, viewfinderHeight) {
+                  return { width: Math.floor(viewfinderWidth * 0.8), height: 120 };
+              },
+              aspectRatio: 1.0
+          },
+          (decodedText) => {
+            if (!isComponentMounted) return;
+            if (navigator.vibrate) navigator.vibrate(200);
+            
+            html5QrCode.stop().then(() => {
+              if (isComponentMounted) {
+                  setCameraActive(false);
+                  processBarcode(decodedText);
+              }
+            }).catch(console.error);
+          },
+          (errorMessage) => { /* ignora erros de scan frame */ }
+        );
+      } catch (err) {
+        if (isComponentMounted) {
+          console.error(err);
+          showToast("Permita o uso da câmera no navegador.", "error");
+          setCameraActive(false);
+        }
       }
     };
-    syncData();
-    const interval = setInterval(syncData, 5000);
-    return () => clearInterval(interval);
-  }, []);
+
+    initCamera();
+
+    return () => {
+      isComponentMounted = false;
+      if (html5QrCode) {
+        try {
+          html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+        } catch (e) {}
+      }
+    };
+  }, [showScanner, cameraActive, isScannerReady, scannedProduct]);
 
   useEffect(() => {
-    localStorage.setItem(`@${APP_ID}:config`, JSON.stringify(config));
-  }, [config]);
+    if (showScanner && !cameraActive && !scannedProduct && scannerInputRef.current) {
+      setTimeout(() => { if (scannerInputRef.current) scannerInputRef.current.focus(); }, 100);
+    }
+  }, [showScanner, cameraActive, scannedProduct]);
 
-  // ---------- CARRINHO ----------
-  const addToCart = (p) => {
-    setCart(prev => {
-      const exists = prev.find(i => i.id === p.id);
-      if (exists) return prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { id: p.id, name: p.name, price: Number(p.price || 0), image: p.image, qty: 1 }];
-    });
-    setShowCart(true);
-  };
-  const changeQty = (id, delta) => {
-    setCart(prev => prev
-      .map(i => i.id === id ? { ...i, qty: Math.max(0, i.qty + delta) } : i)
-      .filter(i => i.qty > 0));
-  };
-  const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
-  const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-
-  const handleSecretDoubleTap = () => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 400) setShowAdminLogin(true);
-    lastTapRef.current = now;
+  const handleSizeChange = (index, field, value) => {
+    const newSizes = [...formSizes];
+    newSizes[index][field] = field === 'stock' ? parseInt(value) || 0 : value.toUpperCase();
+    setFormSizes(newSizes);
   };
 
-  // ---------- ADMIN: AÇÕES DE PEDIDO ----------
-  const handleConfirm = async (order) => {
-    try {
-      await confirmOrderSale(order, products);
-      // refetch imediato
-      const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-      if (data) setOrders(data);
-      const { data: pData } = await supabase.from('products').select('*').order('id', { ascending: false });
-      if (pData) setProducts(pData);
-    } catch (e) { alert('Erro ao confirmar venda: ' + e.message); }
-  };
-  const handleCancel = async (id) => {
-    try { await cancelOrder(id); setOrders(o => o.map(x => x.id === id ? { ...x, status: 'cancelled' } : x)); }
-    catch (e) { alert('Erro: ' + e.message); }
-  };
-  const handleDelete = async (id) => {
-    if (!confirm('Apagar este pedido?')) return;
-    try { await deleteOrder(id); setOrders(o => o.filter(x => x.id !== id)); }
-    catch (e) { alert('Erro: ' + e.message); }
+  const removeSize = (index) => setFormSizes(formSizes.filter((_, i) => i !== index));
+  const addSize = () => setFormSizes([...formSizes, { size: '', stock: 0 }]);
+
+  const filteredInv = (products || []).filter(p => 
+    (p.name || '').toLowerCase().includes(invSearch.toLowerCase()) || 
+    (p.sku || '').toLowerCase().includes(invSearch.toLowerCase())
+  );
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setIsUploadingImage(true);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_SIZE = 400; 
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+          } else {
+            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+          }
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          setPreviewImage(canvas.toDataURL('image/jpeg', 0.6)); 
+          setIsUploadingImage(false);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  // ============================================================
-  // RENDER ADMIN
-  // ============================================================
-  if (isAdmin) {
-    const pendingCount = orders.filter(o => o.status === 'pending').length;
-    return (
-      <div className="min-h-screen bg-black text-white font-sans pb-32">
-        <header className="p-6 border-b border-white/10 bg-zinc-950 flex justify-between items-center sticky top-0 z-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-black shadow-lg"><LayoutDashboard/></div>
-            <h2 className="font-black italic uppercase text-xs">Master Control</h2>
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (isUploadingImage) { showToast('Aguarde o processamento da imagem...', 'error'); return; }
+    const computedStock = formSizes.reduce((acc, curr) => acc + (parseInt(curr.stock) || 0), 0);
+    const fd = new FormData(e.target);
+    const data = {
+      id: editMode === 'new' ? Date.now() : editMode.id,
+      name: fd.get('name'),
+      sku: fd.get('sku'),
+      price: parseFloat(fd.get('price')),
+      category: fd.get('category').toUpperCase(),
+      image: previewImage || editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400',
+      stock: computedStock, 
+      sales: editMode === 'new' ? 0 : editMode.sales,
+      sizes: formSizes.filter(s => s.size && s.size.trim() !== ''),
+      featured: fd.get('featured') === 'on'
+    };
+    const updatedProducts = editMode === 'new' ? [data, ...products] : products.map(p => p.id === data.id ? data : p);
+    setProducts(updatedProducts);
+    showToast('Produto salvo com sucesso!');
+    setEditMode(null);
+    setPreviewImage('');
+  };
+
+  const processBarcode = (code) => {
+    if (!code) return;
+    const sanitizedCode = code.toString().trim().toUpperCase();
+    if (!sanitizedCode) return;
+
+    let foundProduct = null;
+    let foundSize = '';
+
+    foundProduct = products.find(p => (p.sku || '').toUpperCase() === sanitizedCode);
+    
+    if (!foundProduct && sanitizedCode.includes('-')) {
+        const parts = sanitizedCode.split('-');
+        const baseSku = parts.slice(0, -1).join('-'); 
+        const possibleSize = parts[parts.length - 1]; 
+
+        const possibleProduct = products.find(p => (p.sku || '').toUpperCase() === baseSku);
+        if (possibleProduct) {
+            const sizeExists = (possibleProduct.sizes || []).some(s => (s.size || s).toString().toUpperCase() === possibleSize);
+            if (sizeExists) {
+                foundProduct = possibleProduct;
+                foundSize = possibleSize;
+            }
+        }
+    }
+
+    if (foundProduct) {
+        setScannedProduct(foundProduct);
+        if (foundSize) {
+             setScannedSize(foundSize);
+        } else if ((foundProduct.sizes || []).length === 1) {
+             setScannedSize(foundProduct.sizes[0].size || foundProduct.sizes[0]);
+        } else {
+             setScannedSize(''); 
+        }
+        showToast('Produto localizado.', 'success');
+    } else {
+        showToast(`Código não encontrado: ${sanitizedCode}`, 'error');
+        if (!cameraActive && scannerInputRef.current) setTimeout(() => scannerInputRef.current.focus(), 50);
+    }
+  };
+
+  const handlePhysicalScan = (e) => {
+    e.preventDefault();
+    processBarcode(e.target.elements.barcode.value);
+    e.target.reset();
+  };
+
+  const handleStockAction = (actionType) => {
+      if (!scannedProduct) return;
+      if ((scannedProduct.sizes || []).length > 0 && !scannedSize) { showToast('Selecione a variação/tamanho lida.', 'error'); return; }
+
+      const updatedProducts = products.map(p => {
+          if (p.id !== scannedProduct.id) return p;
+
+          let stockAdjustment = actionType === 'add' ? 1 : -1;
+          
+          if (!p.sizes || p.sizes.length === 0) {
+              const newTotal = Math.max(0, (p.stock || 0) + stockAdjustment);
+              return { ...p, stock: newTotal };
+          }
+
+          const newSizes = p.sizes.map(s => {
+              const sName = typeof s === 'string' ? s : s.size;
+              const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+              if (sName === scannedSize) return { size: sName, stock: Math.max(0, sStock + stockAdjustment) };
+              return { size: sName, stock: sStock };
+          });
+
+          const newTotalStock = newSizes.reduce((acc, curr) => acc + curr.stock, 0);
+          return { ...p, sizes: newSizes, stock: newTotalStock };
+      });
+
+      setProducts(updatedProducts);
+      const refreshedProduct = updatedProducts.find(p => p.id === scannedProduct.id);
+      setScannedProduct(refreshedProduct);
+      showToast(actionType === 'add' ? '+1 Estoque' : '-1 Estoque', actionType === 'add' ? 'success' : 'error');
+      
+      if (!cameraActive && scannerInputRef.current) scannerInputRef.current.focus();
+  };
+
+  return (
+    <div className="p-6 animate-in space-y-6 pb-24">
+      {showScanner && (
+        <div className="fixed inset-0 z-[200] bg-zinc-950/95 backdrop-blur-xl flex flex-col animate-in overflow-hidden">
+           <div className="flex justify-between items-center p-6 border-b border-white/10 bg-zinc-950">
+               <div>
+                 <h2 className="text-sm font-black uppercase text-emerald-500 tracking-widest flex items-center gap-2"><Scan size={18}/> Módulo Leitor (POS)</h2>
+                 <p className="text-[9px] text-zinc-500 uppercase font-bold mt-1">Conecte o leitor ou use a câmera do celular.</p>
+               </div>
+               <button onClick={() => { setShowScanner(false); setScannedProduct(null); setCameraActive(false); }} className="p-3 bg-zinc-900 text-zinc-400 hover:text-white rounded-full transition-colors"><X size={20}/></button>
+           </div>
+           
+           <div className="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col items-center">
+               {!scannedProduct && (
+                   <div className="flex w-full max-w-sm bg-zinc-900 border border-white/5 rounded-[16px] p-1 shadow-inner shrink-0">
+                       <button onClick={() => setCameraActive(false)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 ${!cameraActive ? 'bg-zinc-800 text-white shadow-lg border border-white/10' : 'text-zinc-500 hover:text-white'}`}><Barcode size={14}/> Leitor Físico</button>
+                       <button onClick={() => setCameraActive(true)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 ${cameraActive ? 'bg-emerald-500 text-zinc-950 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'text-zinc-500 hover:text-emerald-500'}`}><Camera size={14}/> Câmera Celular</button>
+                   </div>
+               )}
+
+               {!scannedProduct && !cameraActive && (
+                   <form 
+                      onSubmit={handlePhysicalScan} 
+                      onClick={() => scannerInputRef.current?.focus()} 
+                      className="cursor-pointer w-full max-w-sm flex-1 bg-zinc-900 border-2 border-dashed border-white/10 rounded-3xl p-8 flex flex-col items-center justify-center group focus-within:border-emerald-500/50 transition-colors shadow-2xl"
+                   >
+                       <ScanLine size={48} className="text-zinc-700 mb-4 group-focus-within:text-emerald-500 group-focus-within:animate-pulse transition-colors" />
+                       <h3 className="text-white font-black uppercase text-xs tracking-widest text-center">Aguardando Bip...</h3>
+                       <p className="text-[9px] text-zinc-500 uppercase mt-2 text-center">O leitor físico enviará os dados instantaneamente</p>
+                       <input 
+                          ref={scannerInputRef}
+                          name="barcode" 
+                          autoFocus
+                          placeholder="Escaneie aqui..."
+                          className="mt-6 w-full max-w-[200px] text-center bg-zinc-950 border border-white/10 rounded-xl py-3 text-emerald-500 font-mono font-black tracking-widest outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all" 
+                          autoComplete="off"
+                       />
+                   </form>
+               )}
+
+               {!scannedProduct && cameraActive && (
+                   <div className="w-full max-w-sm flex flex-col items-center justify-start pt-8 shrink-0">
+                       {!isScannerReady ? (
+                           <div className="flex flex-col items-center text-emerald-500 animate-pulse py-20">
+                               <Camera size={32} className="mb-2"/>
+                               <p className="text-[10px] font-black uppercase">Iniciando Motor Óptico...</p>
+                           </div>
+                       ) : (
+                           <div className="w-full flex flex-col items-center">
+                               <div className="relative w-full aspect-square bg-black rounded-3xl overflow-hidden border-2 border-emerald-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
+                                   <div id="reader" className="w-full h-full"></div>
+                               </div>
+                               <p className="text-[10px] text-zinc-400 font-bold uppercase mt-6 text-center tracking-widest flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-full border border-white/5"><Camera size={14} className="text-emerald-500"/> Centralize o código na área clara</p>
+                           </div>
+                       )}
+                   </div>
+               )}
+
+               {scannedProduct && (
+                   <div className="w-full max-w-sm bg-zinc-900 rounded-[32px] p-6 border border-emerald-500/30 shadow-2xl animate-slide-up flex-1 flex flex-col">
+                       <div className="flex gap-4 mb-6">
+                           <img src={scannedProduct.image} className="w-24 h-32 object-cover rounded-2xl border border-white/5" alt={scannedProduct.name}/>
+                           <div className="flex flex-col justify-center">
+                               <span className="text-[10px] bg-zinc-950 text-zinc-400 px-3 py-1 rounded-lg font-black uppercase inline-block self-start mb-2 border border-white/5">SKU: {scannedProduct.sku}</span>
+                               <h3 className="text-sm font-black text-white uppercase leading-tight">{scannedProduct.name}</h3>
+                               <p className="text-emerald-500 font-black text-lg mt-1">Estoque Total: {scannedProduct.stock}</p>
+                           </div>
+                       </div>
+
+                       {(scannedProduct.sizes || []).length > 0 && (
+                           <div className="mb-6">
+                               <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-3">Confirmar Variação/Tamanho</p>
+                               <div className="grid grid-cols-4 gap-2">
+                                   {(scannedProduct.sizes || []).map(s => {
+                                       const sName = typeof s === 'string' ? s : s.size;
+                                       const sStock = typeof s === 'string' ? scannedProduct.stock : s.stock;
+                                       return (
+                                           <button 
+                                              key={sName} 
+                                              onClick={() => { setScannedSize(sName); if(!cameraActive) scannerInputRef.current?.focus(); }}
+                                              className={`py-3 rounded-xl border font-black text-sm transition-all flex flex-col items-center gap-1 ${scannedSize === sName ? 'bg-emerald-500 text-zinc-950 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-zinc-950 border-white/5 text-zinc-400'}`}
+                                           >
+                                               <span>{sName}</span>
+                                               <span className={`text-[8px] ${scannedSize === sName ? 'text-zinc-800' : 'text-zinc-600'}`}>{sStock} un</span>
+                                           </button>
+                                       )
+                                   })}
+                               </div>
+                           </div>
+                       )}
+
+                       <div className="grid grid-cols-2 gap-4 mt-auto mb-4">
+                           <button onClick={() => handleStockAction('remove')} className="py-5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2 transition-all hover:bg-red-500 hover:text-white">
+                               <Minus size={16}/> Saída (-1)
+                           </button>
+                           <button onClick={() => handleStockAction('add')} className="py-5 bg-emerald-500 text-zinc-950 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)] transition-all">
+                               <Plus size={16}/> Entrada (+1)
+                           </button>
+                       </div>
+
+                       <button onClick={() => { setScannedProduct(null); if(cameraActive) setCameraActive(true); else setTimeout(()=>scannerInputRef.current?.focus(), 50); }} className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 border border-white/5 rounded-2xl hover:bg-zinc-800 hover:text-white transition-colors">
+                           Escanear Outro Produto
+                       </button>
+                   </div>
+               )}
+           </div>
+        </div>
+      )}
+
+      {!editMode && !showScanner && (
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="font-black italic uppercase text-white tracking-widest text-lg">Catálogo</h3>
+          <div className="flex gap-2">
+            <button onClick={() => setShowScanner(true)} className="bg-zinc-800 text-white px-4 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-transform active:scale-95 shadow-lg border border-white/5 hover:border-emerald-500">
+                <Scan size={14} className="text-emerald-500"/> POS
+            </button>
+            <button onClick={() => setEditMode('new')} className="bg-emerald-500 text-zinc-950 px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-transform active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                <Plus size={14}/> Novo
+            </button>
           </div>
-          <button onClick={() => { sessionStorage.removeItem(`@${APP_ID}:admin`); setIsAdmin(false); }} className="text-[10px] font-black uppercase bg-white text-black px-4 py-2 rounded-full">Sair</button>
-        </header>
+        </div>
+      )}
 
-        <main className="max-w-md mx-auto p-6 space-y-6">
-          {adminTab === 'dashboard' && (
-            <div className="bg-zinc-900 p-6 rounded-[32px] border border-white/5 animate-in">
-              <p className="text-[10px] font-black text-zinc-500 uppercase">Status do Sistema</p>
-              <h3 className="text-2xl font-black text-emerald-500 mt-2">CONECTADO AO SUPABASE</h3>
-              <div className="grid grid-cols-3 gap-3 mt-6">
-                <div className="bg-black p-4 rounded-2xl border border-white/5"><p className="text-[8px] font-black text-zinc-500">PEDIDOS</p><p className="text-xl font-black">{orders.length}</p></div>
-                <div className="bg-black p-4 rounded-2xl border border-white/5"><p className="text-[8px] font-black text-zinc-500">PENDENTES</p><p className="text-xl font-black text-amber-400">{pendingCount}</p></div>
-                <div className="bg-black p-4 rounded-2xl border border-white/5"><p className="text-[8px] font-black text-zinc-500">ITENS</p><p className="text-xl font-black">{products.length}</p></div>
+      {editMode ? (
+        <form onSubmit={handleSave} className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 space-y-4 shadow-2xl relative">
+          <button type="button" onClick={() => { setEditMode(null); setPreviewImage(''); }} className="absolute top-6 right-6 text-zinc-500 hover:text-white"><X/></button>
+          <h3 className="font-black italic uppercase tracking-tighter text-xl text-white mb-6">{editMode === 'new' ? 'Novo Produto' : 'Editar Produto'}</h3>
+          <div className="relative group overflow-hidden bg-zinc-950 border-2 border-dashed border-white/10 rounded-[32px] aspect-video flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-emerald-500/50 transition-all">
+            {previewImage ? (
+              <img src={previewImage} className="absolute inset-0 w-full h-full object-cover opacity-60" alt="Preview" />
+            ) : (
+              <ImageIcon size={40} className="text-zinc-800" />
+            )}
+            <div className="relative z-10 flex flex-col items-center">
+              <Upload size={24} className="text-emerald-500 mb-2" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-white">Carregar Imagem</span>
+            </div>
+            <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="col-span-2 space-y-1">
+               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Nome</label>
+               <input name="name" defaultValue={editMode?.name} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none" required />
+            </div>
+            <div className="space-y-1">
+               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">SKU (Código Barras)</label>
+               <input name="sku" defaultValue={editMode?.sku} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none" required />
+            </div>
+            <div className="space-y-1">
+               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Preço (R$)</label>
+               <input name="price" type="number" step="0.01" defaultValue={editMode?.price} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none" required />
+            </div>
+            <div className="col-span-2 space-y-1">
+               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Categoria</label>
+               <input name="category" defaultValue={editMode?.category} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none uppercase" required />
+            </div>
+            <div className="col-span-2 bg-zinc-950 p-4 rounded-[20px] border border-white/5 space-y-3 mt-2">
+               <label className="text-[9px] font-black text-emerald-500 uppercase flex items-center gap-1"><Layers size={12}/> Grade de Tamanhos</label>
+               {formSizes.map((item, idx) => (
+                 <div key={idx} className="flex gap-2 items-center animate-in">
+                   <input placeholder="Tam." className="w-1/2 p-3 bg-zinc-900 border border-white/5 rounded-xl font-bold text-sm text-white uppercase outline-none" value={item.size} onChange={(e) => handleSizeChange(idx, 'size', e.target.value)} required />
+                   <input type="number" placeholder="Qtd" className="w-1/2 p-3 bg-zinc-900 border border-white/5 rounded-xl font-bold text-sm text-white outline-none" value={item.stock} onChange={(e) => handleSizeChange(idx, 'stock', e.target.value)} required />
+                   <button type="button" onClick={() => removeSize(idx)} className="p-3 text-red-500 bg-red-500/5 rounded-xl transition-colors border border-red-500/10"><X size={16}/></button>
+                 </div>
+               ))}
+               <button type="button" onClick={addSize} className="w-full py-3 mt-2 border border-dashed border-white/10 rounded-xl text-[10px] font-black uppercase text-zinc-500 hover:text-white transition-all">+ Adicionar</button>
+            </div>
+            <div className="col-span-2 flex items-center gap-3 bg-zinc-950 p-4 rounded-2xl border border-white/5 mt-2 cursor-pointer" onClick={() => document.getElementById('f-check').click()}>
+              <input type="checkbox" name="featured" id="f-check" defaultChecked={editMode?.featured} className="w-5 h-5 accent-emerald-500" />
+              <label className="text-[11px] font-black uppercase text-white">Destaque na Home</label>
+            </div>
+          </div>
+          <button type="submit" disabled={isUploadingImage} className={`w-full py-5 rounded-[28px] font-black uppercase text-[11px] tracking-widest mt-6 shadow-[0_0_20px_rgba(16,185,129,0.2)] ${isUploadingImage ? 'bg-zinc-800 text-zinc-500' : 'bg-emerald-500 text-zinc-950 active:scale-95'}`}>
+            {isUploadingImage ? 'Salvando...' : 'Salvar Alterações'}
+          </button>
+        </form>
+      ) : !showScanner && (
+        <div className="space-y-4">
+          <div className="relative group mb-6">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-600" size={18} />
+            <input placeholder="Buscar produto..." className="w-full bg-zinc-900 border border-white/5 py-4 pl-14 pr-6 rounded-3xl text-sm font-bold text-white outline-none focus:border-emerald-500/50" value={invSearch} onChange={(e) => setInvSearch(e.target.value)} />
+          </div>
+          {filteredInv.map(p => (
+            <div key={p.id} className="bg-zinc-900 p-4 rounded-[32px] border border-white/5 flex items-center gap-4 hover:border-white/10 transition-colors">
+              <div className="relative">
+                <img src={p.image} className={`w-16 h-16 rounded-[20px] object-cover shrink-0 ${p.stock === 0 ? 'grayscale opacity-50' : ''}`} alt={p.name} />
+                {p.stock === 0 && <span className="absolute -top-2 -right-2 bg-red-500 w-4 h-4 rounded-full border-2 border-zinc-900"></span>}
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <h4 className="font-black text-white text-[11px] truncate uppercase">{p.name}</h4>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[9px] font-bold text-zinc-500 uppercase bg-zinc-950 px-2 py-1 rounded-lg flex items-center gap-1"><Barcode size={10}/> {p.sku}</span>
+                  <span className={`text-[9px] font-black px-2 py-1 rounded-lg ${p.stock > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>{p.stock} UN</span>
+                </div>
+              </div>
+              <div className="flex gap-1 flex-col">
+                <button onClick={() => setEditMode(p)} className="p-2.5 bg-white/5 rounded-xl text-zinc-400 hover:text-white transition-colors"><Edit3 size={14}/></button>
+                <button onClick={() => { if(window.confirm('Excluir produto?')) setProducts(products.filter(i => i.id !== p.id)); }} className="p-2.5 bg-red-500/10 rounded-xl text-red-500 hover:bg-red-500 hover:text-white transition-colors"><Trash2 size={14}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
+  const [expandedLead, setExpandedLead] = useState(null);
+  const updateLeadStatus = (id, newStatus) => {
+    const leadToUpdate = leads.find(l => l.id === id);
+    if (!leadToUpdate) return;
+    const oldStatus = leadToUpdate.status || 'NOVO';
+    let inventoryChanged = false;
+    let updatedProducts = [...products];
+    
+    if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
+      (leadToUpdate.items || []).forEach(cartItem => {
+        updatedProducts = updatedProducts.map(p => {
+          if (p.id !== cartItem.id) return p;
+          inventoryChanged = true;
+          const newSizes = (p.sizes || []).map(s => {
+            const sName = typeof s === 'string' ? s : (s.size || 'U');
+            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+            return sName === cartItem.size ? { size: sName, stock: Math.max(0, sStock - (cartItem.quantity || 0)) } : { size: sName, stock: sStock };
+          });
+          return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: (p.sales || 0) + (cartItem.quantity || 0) };
+        });
+      });
+    } else if (oldStatus === 'CONCLUÍDO' && newStatus !== 'CONCLUÍDO') {
+       (leadToUpdate.items || []).forEach(cartItem => {
+        updatedProducts = updatedProducts.map(p => {
+          if (p.id !== cartItem.id) return p;
+          inventoryChanged = true;
+          const newSizes = (p.sizes || []).map(s => {
+            const sName = typeof s === 'string' ? s : (s.size || 'U');
+            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+            return sName === cartItem.size ? { size: sName, stock: sStock + (cartItem.quantity || 0) } : { size: sName, stock: sStock };
+          });
+          return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: Math.max(0, (p.sales || 0) - (cartItem.quantity || 0)) };
+        });
+      });
+    }
+    const updatedLeads = leads.map(l => l.id === id ? { ...l, status: newStatus } : l);
+    setLeads(updatedLeads);
+    if (inventoryChanged) setProducts(updatedProducts);
+    showToast('Status e Estoque sincronizados!');
+    setExpandedLead(null);
+  };
+  const statusColors = { 'NOVO': 'text-blue-500', 'EM ATENDIMENTO': 'text-amber-500', 'CONCLUÍDO': 'text-emerald-500', 'CANCELADO': 'text-red-500' };
+
+  return (
+    <div className="p-6 animate-in space-y-4 pb-32">
+      <h3 className="font-black italic uppercase text-white tracking-widest text-lg mb-6">CRM / Clientes</h3>
+      {(!leads || leads.length === 0) ? (
+        <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">Nenhum pedido recebido.</div>
+      ) : leads.map(lead => (
+        <div key={lead.id} className={`bg-zinc-900 rounded-[32px] border overflow-hidden ${expandedLead === lead.id ? 'border-white/20' : 'border-white/5'}`}>
+          <div className="p-6 cursor-pointer" onClick={() => setExpandedLead(expandedLead === lead.id ? null : lead.id)}>
+            <div className="flex justify-between items-start mb-2">
+              <h4 className="font-black text-white text-sm uppercase">{lead.name} <span className="text-[10px] text-zinc-600">#{lead.orderNumber}</span></h4>
+              <span className={`text-[8px] font-black uppercase ${statusColors[lead.status || 'NOVO']}`}>{lead.status || 'NOVO'}</span>
+            </div>
+            <div className="flex justify-between items-center text-[11px] font-bold text-zinc-400">
+              <span>{lead.phone}</span>
+              <span className="text-emerald-500">R$ {(lead.value || 0).toFixed(2)}</span>
+            </div>
+          </div>
+          {expandedLead === lead.id && (
+            <div className="bg-zinc-950/50 p-6 border-t border-white/5 animate-slide-down space-y-4">
+              {(lead.items || []).map((item, idx) => (
+                <div key={idx} className="flex gap-3 bg-zinc-900 p-3 rounded-2xl text-[10px] uppercase font-black">
+                  <span className="text-zinc-500">{item.quantity}x</span>
+                  <span className="text-white flex-1 truncate">{item.name}</span>
+                  <span className="text-emerald-500">{item.size}</span>
+                </div>
+              ))}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>
             </div>
           )}
+        </div>
+      ))}
+    </div>
+  );
+};
 
-          {adminTab === 'leads' && (
-            <div className="space-y-4 animate-in">
-              <h3 className="font-black uppercase italic text-sm">Pedidos (CRM)</h3>
-              {orders.length === 0 && (
-                <div className="bg-zinc-900 p-8 rounded-[24px] text-center text-zinc-500 text-[10px] font-black uppercase">Nenhum pedido ainda</div>
-              )}
-              {orders.map(o => (
-                <div key={o.id} className="bg-zinc-900 p-5 rounded-[24px] border border-white/5">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-[9px] font-black uppercase text-zinc-500">{new Date(o.created_at).toLocaleString('pt-BR')}</p>
-                      <p className="font-black mt-1">{o.customer?.name || 'Sem nome'}</p>
-                      <p className="text-[10px] text-zinc-400">{o.customer?.phone}</p>
-                      {o.customer?.address && <p className="text-[10px] text-zinc-500 mt-1">{o.customer.address}</p>}
-                    </div>
-                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${
-                      o.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
-                      o.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400' :
-                      'bg-red-500/20 text-red-400'
-                    }`}>{o.status === 'pending' ? 'Pendente' : o.status === 'confirmed' ? 'Concluído' : 'Cancelado'}</span>
-                  </div>
+const AdminBanners = ({ banners, setBanners, showToast }) => {
+  const [editBannerMode, setEditBannerMode] = useState(null);
+  const [previewBannerImage, setPreviewBannerImage] = useState('');
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  useEffect(() => { setPreviewBannerImage(editBannerMode?.image || ''); }, [editBannerMode]);
+  const handleBannerFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setIsUploadingBanner(true);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const TW = 800; const TH = 450;
+          canvas.width = TW; canvas.height = TH;
+          const ctx = canvas.getContext('2d');
+          const aspect = img.width / img.height;
+          const tAspect = TW / TH;
+          let rw, rh, xs, ys;
+          if (aspect < tAspect) { rw = img.width; rh = img.width / tAspect; xs = 0; ys = (img.height - rh) / 2; }
+          else { rh = img.height; rw = img.height * tAspect; xs = (img.width - rw) / 2; ys = 0; }
+          ctx.drawImage(img, xs, ys, rw, rh, 0, 0, TW, TH);
+          setPreviewBannerImage(canvas.toDataURL('image/jpeg', 0.7)); 
+          setIsUploadingBanner(false);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  const handleSaveBanner = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = { id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, title: fd.get('title'), subtitle: fd.get('subtitle'), buttonText: fd.get('buttonText'), image: previewBannerImage || editBannerMode?.image, active: fd.get('active') === 'on' };
+    setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
+    showToast('Banner salvo!'); setEditBannerMode(null);
+  };
+  return (
+    <div className="p-6 animate-in space-y-6 pb-32">
+      {!editBannerMode ? (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center"><h3 className="font-black italic uppercase text-white tracking-widest text-lg">Banners</h3><button onClick={() => setEditBannerMode('new')} className="bg-emerald-500 text-zinc-950 px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">+ Novo</button></div>
+          {(banners || []).map(b => (
+            <div key={b.id} className={`bg-zinc-900 p-4 rounded-[24px] border flex items-center gap-4 ${b.active ? 'border-emerald-500/30' : 'border-white/5 opacity-60'}`}>
+              <img src={b.image} className="w-20 h-12 rounded-lg object-cover" alt="Banner" />
+              <div className="flex-1 truncate"><h4 className="font-black text-white text-[10px] uppercase truncate">{b.title}</h4></div>
+              <div className="flex gap-1"><button onClick={() => setEditBannerMode(b)} className="p-2 bg-white/5 rounded-lg text-zinc-400"><Edit3 size={12}/></button><button onClick={() => setBanners((banners || []).filter(i => i.id !== b.id))} className="p-2 bg-red-500/10 rounded-lg text-red-500"><Trash2 size={12}/></button></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <form onSubmit={handleSaveBanner} className="bg-zinc-900 p-8 rounded-[32px] border border-white/10 space-y-4 shadow-2xl relative">
+          <button type="button" onClick={() => setEditBannerMode(null)} className="absolute top-6 right-6 text-zinc-500"><X/></button>
+          <div className="relative overflow-hidden bg-zinc-950 border-2 border-dashed border-white/10 rounded-[20px] aspect-video flex flex-col items-center justify-center cursor-pointer">
+            {previewBannerImage ? <img src={previewBannerImage} className="absolute inset-0 w-full h-full object-cover opacity-60" alt="Preview" /> : <ImagePlus size={32} className="text-zinc-800" />}
+            <span className="relative z-10 text-[9px] font-black uppercase text-white">Carregar Banner 16:9</span>
+            <input type="file" accept="image/*" onChange={handleBannerFileChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+          </div>
+          <input name="title" defaultValue={editBannerMode?.title} placeholder="Título" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" required />
+          <input name="subtitle" defaultValue={editBannerMode?.subtitle} placeholder="Subtítulo" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" />
+          <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+          <label className="flex items-center gap-3 bg-zinc-950 p-4 rounded-2xl border border-white/5"><input type="checkbox" name="active" defaultChecked={editBannerMode === 'new' ? true : editBannerMode?.active} className="w-5 h-5 accent-emerald-500" /><span className="text-[11px] font-black uppercase text-white">Ativo no site</span></label>
+          <button type="submit" disabled={isUploadingBanner} className="w-full py-4 bg-emerald-500 text-zinc-950 rounded-[20px] font-black uppercase text-[10px] tracking-widest">{isUploadingBanner ? 'Salvando...' : 'Confirmar'}</button>
+        </form>
+      )}
+    </div>
+  );
+};
 
-                  <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
-                    {(o.items || []).map((it, idx) => (
-                      <div key={idx} className="flex justify-between text-[11px]">
-                        <span className="text-zinc-300">{it.qty}x {it.name}{it.size ? ` (${it.size})` : ''}</span>
-                        <span className="font-black">R$ {(Number(it.price) * Number(it.qty)).toFixed(2)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-[11px] pt-2 border-t border-white/5 mt-2">
-                      <span className="font-black uppercase text-zinc-500">Total</span>
-                      <span className="font-black text-emerald-400">R$ {Number(o.total || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
+const AdminConfig = ({ config, setConfig, showToast }) => {
+  const [logoPreview, setLogoPreview] = useState(config.logoUrl || '');
+  const [logoZoomPreview, setLogoZoomPreview] = useState(config.logoZoom || 1.5);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [phrases, setPhrases] = useState(config.marqueePhrases || []);
 
-                  {o.status === 'pending' && (
-                    <div className="grid grid-cols-2 gap-2 mt-4">
-                      <button onClick={() => handleConfirm(o)} className="py-3 bg-emerald-500 text-black rounded-xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><Check size={14}/> Confirmar Venda</button>
-                      <button onClick={() => handleCancel(o.id)} className="py-3 bg-zinc-800 text-white rounded-xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><XCircle size={14}/> Cancelar</button>
-                    </div>
-                  )}
-                  {o.status !== 'pending' && (
-                    <button onClick={() => handleDelete(o.id)} className="mt-4 w-full py-2 text-[9px] font-black uppercase text-zinc-500 flex items-center justify-center gap-2"><Trash2 size={12}/> Apagar</button>
-                  )}
-                </div>
-              ))}
+  const handleLogoFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setIsUploadingLogo(true);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MH = 600; let w = img.width; let h = img.height;
+          if (h > MH) { w *= MH / h; h = MH; }
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          setLogoPreview(canvas.toDataURL('image/png', 0.9)); 
+          setIsUploadingLogo(false);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePhraseChange = (index, value) => {
+    const n = [...phrases];
+    n[index] = value.toUpperCase();
+    setPhrases(n);
+  };
+
+  const handleSaveConfig = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const newConfig = {
+      brandName: fd.get('brandName'),
+      whatsapp: fd.get('whatsapp').replace(/\D/g, ''),
+      location: fd.get('location'),
+      minOrder: parseFloat(fd.get('minOrder')),
+      pixelId: fd.get('pixelId'),
+      logoUrl: logoPreview,
+      logoZoom: parseFloat(fd.get('logoZoom') || 1.5),
+      marqueePhrases: phrases.filter(p => p.trim() !== '')
+    };
+    setConfig(newConfig);
+    showToast('Sistema Atualizado!', 'success');
+  };
+
+  return (
+    <div className="p-6 animate-in space-y-6 pb-32">
+      <h3 className="font-black italic uppercase text-white tracking-widest text-lg">Setup Global</h3>
+      <form onSubmit={handleSaveConfig} className="space-y-6">
+        
+        <div className="bg-zinc-900 p-6 rounded-[32px] border border-white/5 space-y-4">
+          <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ImageIcon size={14}/> Identidade Visual</h4>
+          <div className="relative bg-zinc-950 border-2 border-dashed border-white/10 rounded-[20px] h-32 flex flex-col items-center justify-center cursor-pointer">
+            {logoPreview ? (
+              <div className="absolute inset-0 flex items-center justify-center p-2 overflow-hidden bg-black/50">
+                <img src={logoPreview} style={{ transform: `scale(${logoZoomPreview})` }} className="w-full h-full object-contain mix-blend-screen transition-transform" alt="Logo" />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center text-zinc-600">
+                <Upload size={20} className="mb-2" />
+                <span className="text-[9px] font-black uppercase">Subir Logo (PNG/Fundo Preto)</span>
+              </div>
+            )}
+            <input type="file" accept="image/*" onChange={handleLogoFileChange} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
+          </div>
+          {logoPreview && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Zoom da Logo</label>
+                <span className="text-[10px] font-bold text-emerald-500">{logoZoomPreview}x</span>
+              </div>
+              <input type="range" name="logoZoom" min="0.5" max="5" step="0.1" value={logoZoomPreview} onChange={(e) => setLogoZoomPreview(parseFloat(e.target.value))} className="w-full accent-emerald-500" />
+              <button type="button" onClick={() => setLogoPreview('')} className="text-[9px] font-black uppercase text-red-500 flex items-center gap-1 ml-auto"><Trash2 size={12}/> Remover</button>
             </div>
           )}
+        </div>
 
-          {adminTab === 'inventory' && (
-            <div className="space-y-3 animate-in">
-              <h3 className="font-black uppercase italic text-sm">Estoque</h3>
-              {products.map(p => (
-                <div key={p.id} className="bg-zinc-900 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                  <img src={p.image} className="w-14 h-14 rounded-xl object-cover" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-black text-[11px] truncate">{p.name}</p>
-                    <p className="text-[9px] text-zinc-500 uppercase">SKU {p.sku}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] text-zinc-500 uppercase">Estoque</p>
-                    <p className="font-black">{p.stock}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="bg-zinc-900 p-6 rounded-[32px] border border-white/5 space-y-4">
+          <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><Megaphone size={14}/> Letreiro Superior</h4>
+          <div className="space-y-2">
+            {(phrases || []).map((ph, idx) => (
+              <div key={idx} className="flex gap-2 animate-in">
+                <input value={ph} onChange={(e) => handlePhraseChange(idx, e.target.value)} placeholder="Frase de Gatilho" className="flex-1 p-3 bg-zinc-950 border border-white/5 rounded-xl text-xs font-bold text-white uppercase outline-none focus:border-emerald-500/30" />
+                <button type="button" onClick={() => setPhrases(phrases.filter((_, i) => i !== idx))} className="p-3 text-red-500 bg-red-500/5 rounded-xl"><Minus size={14}/></button>
+              </div>
+            ))}
+            <button type="button" onClick={() => setPhrases([...phrases, ''])} className="w-full py-3 mt-2 border border-dashed border-white/10 rounded-xl text-[9px] font-black uppercase text-zinc-500">+ Nova Frase</button>
+          </div>
+        </div>
 
-          {adminTab === 'setup' && (
-            <div className="bg-zinc-900 p-6 rounded-[32px] border border-white/5 space-y-4">
-              <h3 className="font-black uppercase italic">Configurações Visuais</h3>
-              <input placeholder="Nome da Marca" className="w-full p-4 bg-black rounded-xl border border-white/10" value={config.brandName} onChange={e => setConfig({ ...config, brandName: e.target.value })} />
-              <input placeholder="WhatsApp" className="w-full p-4 bg-black rounded-xl border border-white/10" value={config.whatsapp} onChange={e => setConfig({ ...config, whatsapp: e.target.value })} />
-              <button onClick={() => alert('Configurações Salvas!')} className="w-full py-4 bg-white text-black rounded-xl font-black uppercase text-[10px]">Salvar Mudanças</button>
-            </div>
-          )}
+        <div className="bg-zinc-900 p-6 rounded-[32px] border border-white/5 space-y-4">
+          <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><Settings size={14}/> Operação & Contactos</h4>
+          <input name="brandName" defaultValue={config.brandName} placeholder="Nome da Marca" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white outline-none" required />
+          <input name="whatsapp" defaultValue={config.whatsapp} placeholder="WhatsApp (DDD+Num)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white outline-none" required />
+          <input name="location" defaultValue={config.location} placeholder="Cidade, UF" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white outline-none" required />
+          <div className="space-y-1">
+             <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Pedido Mínimo (R$)</label>
+             <input name="minOrder" type="number" step="0.01" defaultValue={config.minOrder} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white outline-none" required />
+          </div>
+          <input name="pixelId" defaultValue={config.pixelId} placeholder="Facebook Pixel ID" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white outline-none" />
+        </div>
+        
+        <button type="submit" disabled={isUploadingLogo} className="w-full py-5 bg-white text-zinc-950 rounded-[28px] font-black uppercase text-[11px] tracking-widest active:scale-95 shadow-xl">{isUploadingLogo ? 'Processando...' : 'Aplicar Mudanças'}</button>
+      </form>
+    </div>
+  );
+};
+
+// ==========================================
+// 4. APLICATIVO PRINCIPAL (ROOT COMPONENT)
+// ==========================================
+export default function App() {
+  const [products, setProducts] = useState(() => {
+    try { const saved = localStorage.getItem(`@${APP_ID}:products`); return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS; } catch(e) { return DEFAULT_PRODUCTS; }
+  });
+  const [banners, setBanners] = useState(() => {
+    try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
+  });
+  const [config, setConfig] = useState(() => {
+    try { const saved = localStorage.getItem(`@${APP_ID}:config`); return saved ? JSON.parse(saved) : DEFAULT_CONFIG; } catch(e) { return DEFAULT_CONFIG; }
+  });
+  const [leads, setLeads] = useState(() => {
+    try { const saved = localStorage.getItem(LEAD_STORAGE_KEY); return saved ? JSON.parse(saved) : []; } catch(e) { return []; }
+  });
+  const [cart, setCart] = useState([]);
+  
+  const [cartBounce, setCartBounce] = useState(false);
+
+  // --- AUTENTICAÇÃO SEGURA ---
+  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem(`@${APP_ID}:admin`) === 'true');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+
+  const [selectedCategory, setSelectedCategory] = useState('TODOS');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedSizes, setSelectedSizes] = useState({});
+  const [showCart, setShowCart] = useState(false);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [currentLead, setCurrentLead] = useState({ name: '', phone: '' });
+  const [toast, setToast] = useState(null);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [whatsappLink, setWhatsappLink] = useState('');
+  const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
+  const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
+  const [adminTab, setAdminTab] = useState('dashboard'); 
+
+  // Referência para o clique duplo
+  const lastTapRef = useRef(0);
+
+  useEffect(() => {
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (viewport) {
+      viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    } else {
+      const meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+      document.head.appendChild(meta);
+    }
+  }, []);
+
+  useEffect(() => { localStorage.setItem(`@${APP_ID}:products`, JSON.stringify(products)); }, [products]);
+  useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
+  useEffect(() => { localStorage.setItem(`@${APP_ID}:config`, JSON.stringify(config)); }, [config]);
+  useEffect(() => { localStorage.setItem(LEAD_STORAGE_KEY, JSON.stringify(leads)); }, [leads]);
+
+  const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
+  useEffect(() => {
+    if (isAdmin || activeBanners.length <= 1) return;
+    const timer = setInterval(() => { setCurrentBannerSlide((prev) => (prev + 1) % activeBanners.length); }, 5000); 
+    return () => clearInterval(timer);
+  }, [activeBanners.length, isAdmin]);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSecretDoubleTap = (e) => {
+    e.preventDefault();
+    const now = Date.now();
+    if (now - lastTapRef.current < 400) {
+      setShowAdminLogin(true);
+    }
+    lastTapRef.current = now;
+  };
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (loginUser === 'Fluxo034' && loginPass === 'METODOFLUXO') {
+      sessionStorage.setItem(`@${APP_ID}:admin`, 'true');
+      setIsAdmin(true);
+      setShowAdminLogin(false);
+      setLoginUser('');
+      setLoginPass('');
+      showToast('Acesso Concedido!', 'success');
+    } else {
+      showToast('Credenciais Inválidas!', 'error');
+    }
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem(`@${APP_ID}:admin`);
+    setIsAdmin(false);
+  };
+
+  const categories = useMemo(() => ['TODOS', ...new Set((products || []).map(p => p.category))], [products]);
+  const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
+
+  const handleProductClick = (product) => {
+    if (product.stock <= 0) {
+        showToast('Esta peça está esgotada no momento.', 'error');
+        return;
+    }
+    setSelectedSizes({}); 
+    setSelectedProduct(product);
+    trackPixel('ViewContent', { content_ids: [product.sku], content_name: product.name, value: product.price, currency: 'BRL' });
+  };
+
+  const handleSizeSelect = (sizeName, maxStock) => {
+    setSelectedSizes(prev => {
+      const currentQty = prev[sizeName] || 0;
+      const itemKey = `${selectedProduct?.id}-${sizeName || 'U'}`;
+      const qtyInCart = (cart || []).find(i => i.itemKey === itemKey)?.quantity || 0;
+      if (currentQty + qtyInCart >= maxStock) { showToast(`Estoque máximo!`, 'error'); return prev; }
+      return { ...prev, [sizeName]: currentQty + 1 };
+    });
+  };
+
+  const handleCommitToCart = () => {
+    let updatedCart = [...cart];
+    Object.entries(selectedSizes).forEach(([sizeName, qty]) => {
+       const itemKey = `${selectedProduct.id}-${sizeName || 'U'}`;
+       const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
+       if (existingIdx >= 0) { updatedCart[existingIdx].quantity += qty; } 
+       else { updatedCart.push({ ...selectedProduct, size: sizeName || 'U', quantity: qty, itemKey }); }
+    });
+    setCart(updatedCart);
+    setCartBounce(true);
+    setTimeout(() => setCartBounce(false), 400);
+
+    trackPixel('AddToCart', { content_ids: [selectedProduct.sku], content_name: selectedProduct.name, value: selectedProduct.price, currency: 'BRL' });
+    showToast(`Adicionado à sacola!`);
+    setSelectedProduct(null); 
+    setSelectedSizes({});
+  };
+
+  const handleFinalize = () => {
+    if (!currentLead.name || currentLead.phone.length < 10) { showToast('Preencha os dados corretamente.', 'error'); return; }
+    setIsRedirecting(true);
+    const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
+    const updatedProducts = products.map(p => {
+      const items = cart.filter(item => item.id === p.id);
+      if (items.length === 0) return p;
+      const newSizes = (p.sizes || []).map(s => {
+        const sName = typeof s === 'string' ? s : (s.size || 'U');
+        const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+        const bought = items.filter(i => i.size === sName).reduce((acc, curr) => acc + curr.quantity, 0);
+        return { size: sName, stock: Math.max(0, sStock - bought) };
+      });
+      return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: (p.sales || 0) + items.reduce((a,b)=>a+b.quantity,0) };
+    });
+    setLeads([{ ...currentLead, id: Date.now(), orderNumber: orderNum, date: new Date().toLocaleString('pt-BR'), value: subtotal, items: cart.map(i=>({id:i.id,name:i.name,sku:i.sku,price:i.price,size:i.size,quantity:i.quantity})), status: 'NOVO' }, ...leads]); setProducts(updatedProducts);
+    const itemsText = cart.map(i => `• [${i.sku}] ${i.name} (${i.size}) x${i.quantity}`).join('\n');
+    const msg = `*NOVO PEDIDO: ${config.brandName}*\n*PEDIDO:* #${orderNum}\n\n*CLIENTE:* ${currentLead.name}\n*CONTATO:* ${currentLead.phone}\n\n*ITENS:*\n${itemsText}\n\n*VALOR:* R$ ${subtotal.toFixed(2)}\n*FRETE:* A combinar`;
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=${config.whatsapp}&text=${encodeURIComponent(msg)}`;
+    setTimeout(() => { setCart([]); setIsRedirecting(false); setWhatsappLink(whatsappUrl); setCheckoutOrderNumber(orderNum); setCheckoutSuccess(true); }, 600);
+  };
+
+  const filteredProducts = useMemo(() => {
+    return (products || []).filter(p => {
+      if (p.stock <= 0) return false;
+      const matchesCat = selectedCategory === 'TODOS' || p.category === selectedCategory;
+      const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCat && matchesSearch;
+    });
+  }, [selectedCategory, searchQuery, products]);
+
+  if (isAdmin) {
+    return (
+      <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-20 selection:bg-emerald-500 selection:text-zinc-950">
+        <AdminHeader handleLogout={handleLogout} />
+        <main className="max-w-md mx-auto">
+          {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
+          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} />}
+          {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
+          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} />}
+          {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
         </main>
-
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900 p-4 rounded-full flex justify-between border border-white/10 shadow-2xl z-50">
-          <button onClick={() => setAdminTab('dashboard')} className={adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}><LayoutDashboard/></button>
-          <button onClick={() => setAdminTab('inventory')} className={adminTab === 'inventory' ? 'text-emerald-500' : 'text-zinc-500'}><Box/></button>
-          <button onClick={() => setAdminTab('leads')} className={`relative ${adminTab === 'leads' ? 'text-emerald-500' : 'text-zinc-500'}`}>
-            <User/>
-            {pendingCount > 0 && <span className="absolute -top-1 -right-1 bg-amber-400 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">{pendingCount}</span>}
-          </button>
-          <button onClick={() => setAdminTab('setup')} className={adminTab === 'setup' ? 'text-emerald-500' : 'text-zinc-500'}><Settings/></button>
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
+          <button onClick={() => setAdminTab('dashboard')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}`}><LayoutDashboard size={18}/><span className="text-[8px] font-black uppercase">Painel</span></button>
+          <button onClick={() => setAdminTab('inventory')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'inventory' ? 'text-emerald-500' : 'text-zinc-500'}`}><Box size={18}/><span className="text-[8px] font-black uppercase">Estoque</span></button>
+          <button onClick={() => setAdminTab('leads')} className={`flex flex-col items-center gap-1 transition-colors relative ${adminTab === 'leads' ? 'text-emerald-500' : 'text-zinc-500'}`}><User size={18}/><span className="text-[8px] font-black uppercase">CRM</span></button>
+          <button onClick={() => setAdminTab('banners')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'banners' ? 'text-emerald-500' : 'text-zinc-500'}`}><Megaphone size={18}/><span className="text-[8px] font-black uppercase">Promo</span></button>
+          <button onClick={() => setAdminTab('config')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'config' ? 'text-emerald-500' : 'text-zinc-500'}`}><Settings size={18}/><span className="text-[8px] font-black uppercase">Setup</span></button>
         </nav>
       </div>
     );
   }
 
-  // ============================================================
-  // RENDER LOJA (CLIENTE)
-  // ============================================================
   return (
-    <div className="min-h-screen bg-black text-white font-sans">
-      <div className="bg-white text-black py-2 overflow-hidden">
-        <div className="flex gap-10 whitespace-nowrap animate-marquee font-black text-[9px] uppercase tracking-widest">
-          {config.marqueePhrases.map((p, i) => <span key={i}>✦ {p}</span>)}
-          {config.marqueePhrases.map((p, i) => <span key={'d' + i}>✦ {p}</span>)}
+    <div className="min-h-screen bg-zinc-950 font-sans text-white pb-0 overflow-x-hidden selection:bg-emerald-500 selection:text-zinc-950">
+      
+      {/* LETREIRO SUPERIOR DINÂMICO */}
+      {(config.marqueePhrases || []).length > 0 && (
+        <div className="bg-zinc-200 text-zinc-950 overflow-hidden py-2.5 relative flex items-center justify-center border-b border-white/5">
+          <div className="animate-marquee whitespace-nowrap text-[9px] font-black uppercase tracking-[0.25em] flex gap-12">
+            {config.marqueePhrases.map((ph, i) => (<span key={i}>✦ {ph}</span>))}
+            {config.marqueePhrases.map((ph, i) => (<span key={`dup-${i}`}>✦ {ph}</span>))}
+          </div>
         </div>
-      </div>
+      )}
 
-      <header className="p-6 flex justify-between items-center h-20 border-b border-white/5 sticky top-0 bg-black/80 backdrop-blur-md z-40">
-        <button className="text-zinc-500"><Search size={22} /></button>
-        <h1 className="text-xl font-black italic uppercase">{config.brandName}</h1>
-        <button onClick={() => setShowCart(true)} className="relative">
+      {toast && <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[200] animate-slide-down"><div className="px-6 py-3 rounded-full font-black text-[10px] uppercase bg-white text-zinc-950 shadow-2xl">{toast.message}</div></div>}
+
+      <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-2xl border-b border-white/5 px-6 py-2 flex justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.5)] h-20">
+        <button className="p-2 text-zinc-400 hover:text-white shrink-0 touch-manipulation" onClick={() => document.getElementById('search-input').focus()}><Search size={22} /></button>
+        
+        <div className="cursor-default select-none flex-1 flex flex-col items-center justify-center mx-2 h-full relative overflow-hidden pointer-events-none">
+          {config.logoUrl ? (
+             <img src={config.logoUrl} alt={config.brandName} style={{ transform: `scale(${config.logoZoom || 1.5})` }} className="h-full w-auto max-w-full object-contain mix-blend-screen transition-transform" />
+          ) : (
+             <h1 className="logo-font text-xl text-white font-black italic uppercase text-center">{config.brandName}</h1>
+          )}
+        </div>
+
+        <button onClick={() => setShowCart(true)} className={`relative p-2 text-white hover:text-emerald-500 shrink-0 touch-manipulation transition-transform ${cartBounce ? 'scale-125 text-emerald-500' : 'scale-100'}`}>
           <ShoppingBag size={24} />
-          {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-emerald-500 text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">{cart.length}</span>}
+          {cart.length > 0 && <span className="absolute top-0 right-0 bg-emerald-500 text-zinc-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-zinc-950 shadow-[0_0_10px_rgba(16,185,129,0.5)]">{cart.reduce((a,i)=>a+i.quantity,0)}</span>}
         </button>
       </header>
 
-      <main className="p-6 grid grid-cols-2 gap-4">
-        {products.length === 0 ? (
-          <div className="col-span-2 py-32 text-center opacity-20"><Package size={48} className="mx-auto mb-4" /><p className="text-[10px] font-black uppercase">O Estoque está vazio.</p></div>
-        ) : (
-          products.map(p => (
-            <div key={p.id} className="bg-zinc-900 rounded-[24px] overflow-hidden border border-white/5">
-              <img src={p.image} className="aspect-[3/4] object-cover w-full opacity-90" />
-              <div className="p-4">
-                <h3 className="text-[10px] font-black uppercase text-zinc-500 truncate">{p.name}</h3>
-                <p className="font-black text-sm text-white mt-1">R$ {Number(p.price || 0).toFixed(2)}</p>
-                <button onClick={() => addToCart(p)} className="mt-3 w-full py-2 bg-emerald-500 text-black rounded-xl font-black uppercase text-[9px] flex items-center justify-center gap-1">
-                  <Plus size={12} /> Adicionar
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </main>
-
-      <footer className="p-10 flex flex-col items-center opacity-10">
-        <button onClick={handleSecretDoubleTap} className="p-4"><Lock size={12} /></button>
-      </footer>
-
-      {/* CARRINHO */}
-      {showCart && (
-        <div className="fixed inset-0 z-[90] bg-black/95 backdrop-blur-xl flex flex-col">
-          <div className="p-6 flex justify-between items-center border-b border-white/10">
-            <h2 className="font-black uppercase italic">Seu Carrinho</h2>
-            <button onClick={() => setShowCart(false)}><X /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {cart.length === 0 ? (
-              <p className="text-center text-zinc-500 text-[10px] font-black uppercase mt-20">Carrinho vazio</p>
-            ) : cart.map(i => (
-              <div key={i.id} className="bg-zinc-900 rounded-2xl p-4 flex items-center gap-3">
-                <img src={i.image} className="w-16 h-16 rounded-xl object-cover" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-[11px] truncate">{i.name}</p>
-                  <p className="text-emerald-400 font-black text-[12px] mt-1">R$ {(i.price * i.qty).toFixed(2)}</p>
+      {activeBanners.length > 0 && (
+        <section className="relative w-full max-w-md mx-auto aspect-[4/5] sm:aspect-video bg-zinc-900 overflow-hidden group">
+          <div className="flex h-full transition-transform duration-700 ease-in-out" style={{ transform: `translateX(-${currentBannerSlide * 100}%)` }}>
+            {activeBanners.map((banner, idx) => (
+              <div key={idx} className="w-full h-full shrink-0 relative">
+                <img src={banner.image} className="w-full h-full object-cover opacity-80" alt="Banner" />
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent"></div>
+                <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col items-center text-center animate-slide-up">
+                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter shadow-black drop-shadow-lg">{banner.title}</h2>
+                  <p className="text-[11px] font-bold text-zinc-300 uppercase tracking-widest mt-2 mb-6 shadow-black drop-shadow-md">{banner.subtitle}</p>
+                  <button onClick={() => document.getElementById('search-input').focus()} className="bg-emerald-500 text-zinc-950 px-8 py-3.5 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.4)]">{banner.buttonText}</button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => changeQty(i.id, -1)} className="w-7 h-7 bg-zinc-800 rounded-full flex items-center justify-center"><Minus size={12} /></button>
-                  <span className="font-black text-[12px] w-5 text-center">{i.qty}</span>
-                  <button onClick={() => changeQty(i.id, 1)} className="w-7 h-7 bg-zinc-800 rounded-full flex items-center justify-center"><Plus size={12} /></button>
-                </div>
-                <button onClick={() => removeFromCart(i.id)} className="text-zinc-600"><Trash2 size={14} /></button>
               </div>
             ))}
           </div>
-          {cart.length > 0 && (
-            <div className="p-6 border-t border-white/10 space-y-3">
-              <div className="flex justify-between"><span className="text-[10px] font-black uppercase text-zinc-500">Total</span><span className="font-black text-emerald-400">R$ {cartTotal.toFixed(2)}</span></div>
-              <button onClick={() => { setShowCart(false); setShowCheckout(true); }} className="w-full py-4 bg-emerald-500 text-black rounded-2xl font-black uppercase text-[11px]">Finalizar Pedido</button>
-            </div>
-          )}
-        </div>
+        </section>
       )}
 
-      {/* CHECKOUT */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-[95] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            const fd = new FormData(e.target);
-            const customer = {
-              name: fd.get('name'),
-              phone: fd.get('phone'),
-              address: fd.get('address'),
-            };
-            try {
-              await createOrder({ customer, items: cart, total: cartTotal });
-              alert('Pedido enviado! Em breve entraremos em contato.');
-              setCart([]);
-              setShowCheckout(false);
-            } catch (err) {
-              alert('Erro ao enviar pedido: ' + err.message);
-            }
-          }} className="bg-zinc-950 p-8 rounded-[40px] border border-white/10 w-full max-w-sm space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-black uppercase italic">Seus Dados</h2>
-              <button type="button" onClick={() => setShowCheckout(false)}><X size={18} /></button>
-            </div>
-            <input name="name" required placeholder="Nome completo" className="w-full p-4 bg-zinc-900 rounded-2xl outline-none text-[12px]" />
-            <input name="phone" required placeholder="WhatsApp (com DDD)" className="w-full p-4 bg-zinc-900 rounded-2xl outline-none text-[12px]" />
-            <textarea name="address" required placeholder="Endereço de entrega" rows="3" className="w-full p-4 bg-zinc-900 rounded-2xl outline-none text-[12px] resize-none" />
-            <div className="flex justify-between text-[11px] pt-2"><span className="font-black uppercase text-zinc-500">Total</span><span className="font-black text-emerald-400">R$ {cartTotal.toFixed(2)}</span></div>
-            <button className="w-full py-4 bg-emerald-500 text-black rounded-2xl font-black uppercase text-[11px]">Enviar Pedido</button>
-          </form>
+      <main className="max-w-md mx-auto px-6 mt-8 space-y-8 min-h-screen">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+          <input id="search-input" placeholder="O que você procura?" className="w-full bg-zinc-900/50 backdrop-blur-sm border border-white/5 py-4 pl-14 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-      )}
+        
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 mask-linear touch-pan-x">
+          {categories.map(cat => (
+            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{cat}</button>
+          ))}
+        </div>
 
-      {/* ADMIN LOGIN */}
+        {filteredProducts.length === 0 ? (
+           <div className="text-center py-20 opacity-50 animate-in">
+               <Package size={48} className="mx-auto mb-4 text-zinc-600"/>
+               <h3 className="font-black uppercase text-sm tracking-widest text-zinc-400">Nenhum produto encontrado</h3>
+               <p className="text-[10px] text-zinc-600 uppercase mt-2">Tente buscar por outro termo ou categoria.</p>
+           </div>
+        ) : (
+           <div className="grid grid-cols-2 gap-4 animate-in">
+             {filteredProducts.map(product => {
+               const isOutOfStock = product.stock <= 0;
+               return (
+                 <div key={product.id} onClick={() => handleProductClick(product)} className={`group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 cursor-pointer active:scale-[0.98]'}`}>
+                   
+                   {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse">Restam {product.stock}</div>}
+                   
+                   <div className="aspect-[3/4] relative bg-zinc-900">
+                     <img src={product.image} className={`w-full h-full object-cover transition-all ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-90 group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+                     
+                     {isOutOfStock && (
+                        <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
+                            <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
+                        </div>
+                     )}
+
+                     {!isOutOfStock && (
+                        <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all"><Plus size={16}/></div>
+                     )}
+                   </div>
+                   <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
+                     <h3 className="font-black text-zinc-400 text-[10px] uppercase line-clamp-2 leading-tight">{product.name}</h3>
+                     <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
+                   </div>
+                 </div>
+               )
+             })}
+           </div>
+        )}
+      </main>
+
+      <footer className="mt-20 bg-zinc-900/50 border-t border-white/5 pt-12 pb-10 px-6 max-w-md mx-auto">
+        <div className="space-y-10">
+          <div className="flex flex-col items-center text-center">
+            <div className="h-16 w-full flex items-center justify-center mb-4 relative overflow-hidden pointer-events-none">
+              {config.logoUrl ? (
+                 <img src={config.logoUrl} alt={config.brandName} style={{ transform: `scale(${config.logoZoom || 1.5})` }} className="h-full w-auto max-w-full object-contain mix-blend-screen opacity-90 transition-transform" />
+              ) : (
+                 <h2 className="text-xl font-black italic uppercase tracking-tighter text-white">{config.brandName}</h2>
+              )}
+            </div>
+            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em] px-4">
+              Lifestyle de alto padrão e streetwear autêntico. Qualidade inegociável em cada detalhe.
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center">
+             <a href="https://www.instagram.com/fluxooutlet034" target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 bg-white/5 border border-white/10 px-8 py-4 rounded-2xl hover:bg-white hover:text-zinc-950 transition-all active:scale-95 shadow-xl touch-manipulation">
+               <Instagram size={20} />
+               <span className="text-[11px] font-black uppercase tracking-widest">Siga @fluxooutlet034</span>
+             </a>
+          </div>
+
+          <div className="bg-zinc-950/50 rounded-[32px] p-6 border border-white/5 space-y-6 pointer-events-none">
+            <h4 className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em] text-center">Checkout 100% Seguro</h4>
+            <div className="grid grid-cols-3 gap-4 opacity-40">
+              <div className="flex flex-col items-center gap-2"><ShieldCheck size={20} className="text-emerald-500" /><span className="text-[7px] font-bold uppercase text-zinc-500">SSL Cripto</span></div>
+              <div className="flex flex-col items-center gap-2"><Lock size={20} className="text-emerald-500" /><span className="text-[7px] font-bold uppercase text-zinc-500">Seguro</span></div>
+              <div className="flex flex-col items-center gap-2"><Award size={20} className="text-emerald-500" /><span className="text-[7px] font-bold uppercase text-zinc-500">Original</span></div>
+            </div>
+          </div>
+
+          <div className="pt-6 text-center border-t border-white/5 text-[8px] font-black text-zinc-700 uppercase tracking-widest flex items-center justify-center gap-2 relative z-10">
+             &copy; {new Date().getFullYear()} {config.brandName} &bull; DIREITOS RESERVADOS
+             <button onClick={handleSecretDoubleTap} className="text-zinc-800 hover:text-emerald-500 transition-colors outline-none select-none touch-manipulation cursor-pointer"><Lock size={10}/></button>
+          </div>
+        </div>
+      </footer>
+
       {showAdminLogin && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-6 backdrop-blur-xl">
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (e.target.user.value === 'Fluxo034' && e.target.pass.value === 'METODOFLUXO') {
-              sessionStorage.setItem(`@${APP_ID}:admin`, 'true');
-              setIsAdmin(true); setShowAdminLogin(false);
-            }
-          }} className="bg-zinc-950 p-8 rounded-[40px] border border-white/10 w-full max-w-sm space-y-6">
-            <h2 className="text-2xl font-black uppercase text-center italic">Acesso Restrito</h2>
-            <input name="user" placeholder="Usuário" className="w-full p-4 bg-zinc-900 rounded-2xl outline-none" />
-            <input name="pass" type="password" placeholder="Senha" className="w-full p-4 bg-zinc-900 rounded-2xl outline-none" />
-            <button className="w-full py-5 bg-emerald-500 text-black rounded-2xl font-black uppercase text-[11px]">Entrar</button>
+        <div className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 animate-in">
+          <form onSubmit={handleLoginSubmit} className="bg-zinc-950 border border-white/10 rounded-[40px] p-8 w-full max-w-sm space-y-6 shadow-[0_20px_60px_rgba(0,0,0,0.8)] relative">
+            <button type="button" onClick={() => setShowAdminLogin(false)} className="absolute top-6 right-6 text-zinc-600 hover:text-white touch-manipulation"><X size={18}/></button>
+            
+            <div className="text-center space-y-2 mt-2">
+              <div className="w-16 h-16 bg-zinc-900 border border-white/5 rounded-[20px] flex items-center justify-center mx-auto mb-6 text-emerald-500 shadow-xl"><ShieldCheck size={32}/></div>
+              <h2 className="text-2xl font-black uppercase text-white tracking-tighter">Acesso Restrito</h2>
+              <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Painel Operacional Tático</p>
+            </div>
+
+            <div className="space-y-4 mt-8">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Usuário</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+                  <input required placeholder="Digite o usuário" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Senha</label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" size={16} />
+                  <input required type="password" placeholder="••••••••" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} className="w-full bg-zinc-900 border border-white/5 py-4 pl-12 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" />
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 shadow-[0_10px_30px_rgba(16,185,129,0.2)] transition-transform touch-manipulation">
+              Autenticar <ChevronRight size={14}/>
+            </button>
           </form>
+        </div>
+      )}
+
+      {selectedProduct && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
+          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] p-8 animate-slide-up border-t border-white/10 shadow-2xl pb-10">
+            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
+            <div className="flex gap-6 mb-8">
+              <img src={selectedProduct.image} className="w-28 h-36 rounded-[20px] object-cover shadow-2xl border border-white/10" alt="Produto" />
+              <div className="flex flex-col justify-center flex-1">
+                <span className="text-[8px] font-black text-zinc-500 uppercase bg-zinc-900 px-2 py-1 rounded-md tracking-widest self-start">REF: {selectedProduct.sku}</span>
+                <h2 className="text-lg font-black text-white leading-tight uppercase mt-1">{selectedProduct.name}</h2>
+                <p className="text-2xl font-black text-emerald-500 mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
+              <div className="grid grid-cols-4 gap-2">
+                {(selectedProduct.sizes || []).map((s, idx) => {
+                  const sz = typeof s === 'string' ? s : s.size;
+                  const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
+                  const qty = selectedSizes[sz] || 0;
+                  if (qty > 0) {
+                    return (
+                      <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
+                        <span className="text-xs font-black text-emerald-500">{sz}</span>
+                        <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
+                          <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
+                          <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
+                          <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
+                  );
+                })}
+              </div>
+              <div className="pt-6 mt-4 border-t border-white/5">
+                <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
+                  {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
+                </button>
+              </div>
+            </div>
+            <button onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} className="absolute top-6 right-6 text-zinc-600 bg-zinc-900 rounded-full p-2 touch-manipulation"><X size={18}/></button>
+          </div>
+        </div>
+      )}
+
+      {showCart && (
+        <div className="fixed inset-0 z-[150] bg-zinc-950 overflow-y-auto animate-in">
+          <div className="max-w-md mx-auto min-h-screen flex flex-col bg-zinc-950 relative">
+            <div className="sticky top-0 bg-zinc-950/80 backdrop-blur-xl border-b border-white/5 px-6 py-6 flex justify-between items-center h-20 z-10">
+              <h2 className="text-xl font-black uppercase text-white">Sua Sacola <span className="bg-white text-zinc-950 text-[10px] px-2 py-0.5 rounded-full ml-2">{cart.length}</span></h2>
+              <button onClick={() => setShowCart(false)} className="p-2 text-zinc-400 bg-zinc-900 rounded-full touch-manipulation"><X size={18}/></button>
+            </div>
+            
+            <div className="flex-1 space-y-4 px-6 py-6 pb-64">
+                {cart.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-64 opacity-50 animate-in">
+                       <ShoppingBag size={48} className="mb-4 text-zinc-600"/>
+                       <h3 className="font-black uppercase text-sm tracking-widest text-zinc-400">Sua sacola está vazia</h3>
+                       <button onClick={() => setShowCart(false)} className="mt-6 border border-white/20 text-[10px] font-black uppercase px-6 py-3 rounded-full text-white hover:bg-white hover:text-zinc-950 transition-colors">Voltar para a loja</button>
+                    </div>
+                ) : (
+                    cart.map(item => (
+                      <div key={item.itemKey} className="bg-zinc-900/50 p-3 rounded-[24px] border border-white/5 flex gap-4 shadow-sm animate-in">
+                        <img src={item.image} className="w-20 h-24 rounded-[16px] object-cover border border-white/5" alt="Item" />
+                        <div className="flex-1 flex flex-col justify-between py-1">
+                          <div className="flex justify-between items-start">
+                            <div className="overflow-hidden pr-2"><h4 className="font-black text-white text-[11px] uppercase truncate leading-tight">{item.name}</h4><span className="text-[9px] font-bold text-zinc-500 uppercase block mt-0.5">Tam: {item.size}</span></div>
+                            <button onClick={() => setCart(cart.filter(i => i.itemKey !== item.itemKey))} className="text-zinc-600 hover:text-red-500 touch-manipulation"><Trash2 size={16}/></button>
+                          </div>
+                          <div className="flex justify-between items-center mt-3">
+                            <span className="font-black text-emerald-500 text-sm">R$ {(item.price || 0).toFixed(2)}</span>
+                            <div className="flex items-center bg-zinc-950 rounded-lg border border-white/5 p-1">
+                              <button onClick={() => { if(item.quantity > 1) setCart(cart.map(i => i.itemKey === item.itemKey ? {...i, quantity: i.quantity - 1} : i)) }} className="text-zinc-400 p-1.5 touch-manipulation"><Minus size={12}/></button>
+                              <span className="font-black text-xs text-white w-6 text-center">{item.quantity}</span>
+                              <button onClick={() => {
+                                 const p = products.find(x => x.id === item.id);
+                                 const sz = (p.sizes || []).find(s => (typeof s === 'string' ? s : s.size) === item.size);
+                                 const max = sz ? (typeof sz === 'string' ? p.stock : sz.stock) : p.stock;
+                                 if (item.quantity < max) setCart(cart.map(i => i.itemKey === item.itemKey ? {...i, quantity: i.quantity + 1} : i));
+                                 else showToast(`Estoque máximo!`, 'error');
+                              }} className="text-zinc-400 p-1.5 touch-manipulation"><Plus size={12}/></button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                )}
+            </div>
+            {cart.length > 0 && (
+              <div className="fixed bottom-0 left-0 right-0 bg-zinc-950/95 backdrop-blur-xl border-t border-white/10 px-6 py-6 max-w-md mx-auto z-50 shadow-2xl">
+                <div className="space-y-2 mb-5">
+                   <div className="flex justify-between items-center text-[11px] font-bold uppercase text-zinc-400"><span>Subtotal</span><span>R$ {subtotal.toFixed(2)}</span></div>
+                   <div className="flex justify-between items-end pt-3 border-t border-white/10"><p className="text-[12px] font-black text-white uppercase tracking-widest">Total dos Itens</p><h3 className="text-3xl font-black text-emerald-500 tracking-tighter">R$ {subtotal.toFixed(2)}</h3></div>
+                </div>
+                <button onClick={() => { setShowCart(false); setShowLeadModal(true); }} className="w-full py-5 rounded-2xl font-black text-[11px] uppercase bg-white text-zinc-950 active:scale-95 shadow-2xl flex items-center justify-center gap-2 touch-manipulation">Finalizar Pedido <Lock size={14}/></button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showLeadModal && (
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-6 shadow-2xl border border-white/10 animate-in relative overflow-hidden">
+            <button onClick={() => { setShowLeadModal(false); setCheckoutSuccess(false); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation"><X size={16}/></button>
+            {checkoutSuccess ? (
+              <div className="text-center relative z-10 space-y-2 mt-4 animate-in">
+                 <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20"><CheckCircle2 size={40}/></div>
+                 <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Pedido Pronto!</h3>
+                 <div className="inline-block bg-zinc-900 border border-white/10 rounded-xl px-4 py-2 mt-2 mb-4"><span className="text-[9px] text-zinc-500 uppercase font-black block">Código do Pedido</span><span className="text-emerald-500 font-black text-xl tracking-widest">#{checkoutOrderNumber}</span></div>
+                 <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest px-2 mb-6 text-center">Agora, envie no WhatsApp para validarmos seu envio e combinarmos o frete.</p>
+                 <a href={whatsappLink} target="_blank" rel="noopener noreferrer" onClick={() => setShowLeadModal(false)} className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 touch-manipulation">Enviar WhatsApp <Zap size={14}/></a>
+              </div>
+            ) : (
+              <div className="animate-in">
+                <div className="text-center relative z-10 space-y-2 mt-4">
+                  <div className="w-16 h-16 bg-white text-zinc-950 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl"><ShieldCheck size={30}/></div>
+                  <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Dados de Entrega</h3>
+                  <p className="text-zinc-400 text-[10px] font-bold uppercase">Preencha os dados para concluir seu pedido.</p>
+                </div>
+                <div className="space-y-4 relative z-10 text-left pt-6">
+                  <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Nome Completo</label><input placeholder="Ex: João da Silva" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.name} onChange={e => setCurrentLead({...currentLead, name: e.target.value})} /></div>
+                  <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">WhatsApp (Com DDD)</label><input placeholder="Ex: 34999999999" type="tel" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.phone} onChange={e => setCurrentLead({...currentLead, phone: e.target.value.replace(/\D/g, '')})} /></div>
+                  <button onClick={handleFinalize} disabled={isRedirecting} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation">{isRedirecting ? 'Processando...' : 'Gerar Pedido'} <Zap size={14}/></button>
+                </div>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-600 flex items-center justify-center gap-1 opacity-70 mt-6"><Lock size={10}/> Ambiente 100% Seguro</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       <style>{`
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        .animate-marquee { animation: marquee 20s linear infinite; }
-        .animate-in { animation: fadeIn 0.5s ease-in; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        ::-webkit-scrollbar { display: none; }
+        
+        body { 
+          font-family: 'Inter', sans-serif; 
+          -webkit-tap-highlight-color: transparent; 
+          background-color: #09090b; 
+          overflow-x: hidden;
+          touch-action: manipulation; 
+        }
+        
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .mask-linear { -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
+        .animate-in { animation: fadeIn 0.5s ease-out; }
+        .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-marquee { animation: marquee 30s linear infinite; }
+        
+        #reader { position: relative; width: 100%; height: 100%; }
+        #reader video { width: 100% !important; height: 100% !important; object-fit: cover !important; position: absolute !important; top: 0; left: 0; border-radius: 20px !important; }
+        #reader canvas { position: absolute !important; top: 0; left: 0; z-index: 10 !important; border-radius: 20px !important; }
+
+        @supports (-webkit-touch-callout: none) {
+            .client-input { font-size: 16px !important; }
+        }
+
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes marquee { 0% { transform: translateX(0%); } 100% { transform: translateX(-50%); } }
       `}</style>
     </div>
   );
 }
+
+
