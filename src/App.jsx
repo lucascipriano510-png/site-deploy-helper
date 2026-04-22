@@ -1146,9 +1146,9 @@ export default function App() {
   };
 
   const handleFinalize = async () => {
-    setIsLoading(true);
     let payloadSanitizado = null;
     try {
+      setIsLoading(true);
       const orderNum = String(Math.floor(10000 + Math.random() * 90000));
       const customerName = String(currentLead?.name ?? '').trim() || 'Cliente não informado';
       const customerPhone = String(currentLead?.phone ?? '').replace(/\D/g, '') || '';
@@ -1164,27 +1164,21 @@ export default function App() {
       }));
 
       payloadSanitizado = {
-        customer: JSON.stringify({
-          name: customerName,
-          phone: customerPhone,
-          orderNumber: orderNum
-        }),
-        items: JSON.stringify(itensNormalizados),
-        total: totalPedido,
-        notes: String(''),
-        status: String('pending')
+        order_number: orderNum,
+        name: customerName,
+        phone: customerPhone || '',
+        items: JSON.stringify(itensNormalizados || []),
+        total: Number(totalPedido) || 0
       };
 
       console.log('[checkout] payload sanitizado antes do insert:', payloadSanitizado);
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('orders')
-        .insert([payloadSanitizado])
-        .select()
-        .single();
+        .insert([payloadSanitizado]);
       if (error) throw new Error(error.message);
 
-      console.log('[checkout] sucesso no Supabase:', data);
+      console.log('[checkout] sucesso no Supabase:', payloadSanitizado.order_number);
 
       const itemsText = itensNormalizados
         .map((item) => `• ${item.name} | Tam: ${item.size} | R$ ${item.price.toFixed(2)} x${item.qty}`)
