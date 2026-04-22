@@ -1161,11 +1161,13 @@ export default function App() {
     const message = `Olá! Gostaria de finalizar meu pedido na ${config.brandName}.\n\n*Cliente:* ${currentLead.name}\n*WhatsApp:* ${currentLead.phone}\n\n*Itens do pedido:*\n${itemsText}\n\n*Total do pedido:* R$ ${subtotal.toFixed(2)}\n\nAguardo confirmação. Obrigado!`;
 
     try {
-      await createOrder(orderData);
+      const savedOrder = await createOrder(orderData);
+      if (!savedOrder?.id) throw new Error('Pedido sem ID retornado pelo Supabase.');
       console.log('Sucesso no banco');
-      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
     } catch (error) {
-      console.error('Erro no banco, mas vou abrir o Zap:', error);
+      console.error('Erro ao salvar pedido no banco:', error);
+      showToast('Falha ao registrar pedido. Tente novamente.', 'error');
+      return;
     }
 
     const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
@@ -1175,6 +1177,8 @@ export default function App() {
     setShowLeadModal(false);
     setShowCart(false);
     setCart([]);
+    showToast('Pedido registrado!');
+    await new Promise(resolve => setTimeout(resolve, 350));
     window.location.href = whatsappUrl;
   };
 
