@@ -16,6 +16,7 @@ import {
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
 import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
+import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip as ReTooltip, Cell } from 'recharts';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -98,11 +99,34 @@ const AdminHeader = ({ handleLogout }) => (
 
 const AdminDashboard = ({ leads, products }) => {
   const validLeads = (leads || []).filter(l => l.status !== 'CANCELADO');
-  const totalRevenue = validLeads.reduce((a, b) => a + (b.value || 0), 0);
-  const avgTicket = validLeads.length > 0 ? (totalRevenue / validLeads.length) : 0;
+  const concludedLeads = (leads || []).filter(l => l.status === 'CONCLUÍDO');
+  const totalRevenue = concludedLeads.reduce((a, b) => a + (b.value || 0), 0);
+  const avgTicket = concludedLeads.length > 0 ? (totalRevenue / concludedLeads.length) : 0;
   
   // PROTEÇÃO CONTRA CRASH: (lead.items || []) blinda o sistema contra leads antigos sem items
-  const totalItemsSold = validLeads.reduce((acc, lead) => acc + (lead.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0), 0);
+  const totalItemsSold = concludedLeads.reduce((acc, lead) => acc + (lead.items || []).reduce((sum, item) => sum + (item.quantity || item.qty || 0), 0), 0);
+
+  // Dados últimos 7 dias (vendas concluídas por dia)
+  const chartData = useMemo(() => {
+    const days = [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0,10);
+      const label = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.','').toUpperCase().slice(0,3);
+      days.push({ key, label, valor: 0, pedidos: 0 });
+    }
+    concludedLeads.forEach(l => {
+      const raw = l._raw?.created_at;
+      if (!raw) return;
+      const k = new Date(raw).toISOString().slice(0,10);
+      const d = days.find(x => x.key === k);
+      if (d) { d.valor += Number(l.value || 0); d.pedidos += 1; }
+    });
+    return days;
+  }, [concludedLeads]);
   
   const lowStockProducts = (products || []).filter(p => p.stock > 0 && p.stock <= 3);
   const outOfStockProducts = (products || []).filter(p => p.stock === 0);
@@ -113,12 +137,23 @@ const AdminDashboard = ({ leads, products }) => {
     <div className="p-6 space-y-6 animate-in pb-24">
       <div className="bg-gradient-to-br from-emerald-900 to-zinc-950 p-6 rounded-[32px] border border-emerald-500/20 shadow-2xl relative overflow-hidden">
         <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={180}/></div>
-        <p className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2"><TrendingUp size={12}/> Receita Global</p>
+        <p className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2"><TrendingUp size={12}/> Receita Concluída</p>
         <h3 className="text-4xl font-black text-white italic relative z-10 tracking-tighter shadow-black drop-shadow-md">R$ {totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
-        <div className="flex items-end gap-1.5 h-10 mt-6 relative z-10 opacity-60">
-           {[40, 70, 45, 90, 60, 100, 80].map((h, i) => (
-             <div key={i} className="flex-1 bg-emerald-500 rounded-t-sm" style={{ height: `${h}%` }}></div>
-           ))}
+        <div className="h-24 mt-6 relative z-10 -mx-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{top: 5, right: 6, bottom: 0, left: 6}}>
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#71717a', fontWeight: 900 }} axisLine={false} tickLine={false} />
+              <ReTooltip
+                cursor={{ fill: 'rgba(16,185,129,0.08)' }}
+                contentStyle={{ background: '#09090b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, fontWeight: 900 }}
+                labelStyle={{ color: '#a1a1aa' }}
+                formatter={(v, n) => n === 'valor' ? [`R$ ${Number(v).toFixed(2)}`, 'Vendas'] : [v, 'Pedidos']}
+              />
+              <Bar dataKey="valor" radius={[6,6,0,0]}>
+                {chartData.map((e, i) => (<Cell key={i} fill={e.valor > 0 ? '#10b981' : '#27272a'} />))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
@@ -716,9 +751,41 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
   };
   const statusColors = { 'NOVO': 'text-blue-500', 'EM ATENDIMENTO': 'text-amber-500', 'CONCLUÍDO': 'text-emerald-500', 'CANCELADO': 'text-red-500' };
 
+  const exportCSV = () => {
+    if (!leads || leads.length === 0) { showToast('Nenhum pedido para exportar.', 'error'); return; }
+    const esc = (v) => {
+      const s = String(v == null ? '' : v);
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s;
+    };
+    const header = ['Pedido','Data','Cliente','WhatsApp','Status','Total (R$)','Itens'];
+    const rows = leads.map(l => [
+      l.orderNumber,
+      l.date,
+      l.name,
+      l.phone,
+      l.status || 'NOVO',
+      Number(l.value || 0).toFixed(2).replace('.', ','),
+      (l.items || []).map(i => `${i.quantity || i.qty || 1}x ${i.name} (${i.size || 'U'})`).join(' | '),
+    ]);
+    const csv = '\uFEFF' + [header, ...rows].map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pedidos-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('CSV exportado!');
+  };
+
   return (
     <div className="p-6 animate-in space-y-4 pb-32">
-      <h3 className="font-black italic uppercase text-white tracking-widest text-lg mb-6">CRM / Clientes</h3>
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="font-black italic uppercase text-white tracking-widest text-lg">CRM / Clientes</h3>
+        <button onClick={exportCSV} data-testid="btn-export-csv" className="px-4 py-2.5 bg-zinc-800 border border-white/5 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 active:scale-95 hover:border-emerald-500/30">
+          <Database size={12} className="text-emerald-500"/> CSV
+        </button>
+      </div>
       {(!leads || leads.length === 0) ? (
         <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">Nenhum pedido recebido.</div>
       ) : leads.map(lead => (
@@ -1111,6 +1178,11 @@ export default function App() {
 
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSize, setSelectedSize] = useState('TODOS');
+  const [showMyOrders, setShowMyOrders] = useState(false);
+  const [myOrdersPhone, setMyOrdersPhone] = useState('');
+  const [myOrdersResults, setMyOrdersResults] = useState(null);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSizes, setSelectedSizes] = useState({});
   const [showCart, setShowCart] = useState(false);
@@ -1301,9 +1373,47 @@ export default function App() {
       if (p.stock <= 0) return false;
       const matchesCat = selectedCategory === 'TODOS' || p.category === selectedCategory;
       const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCat && matchesSearch;
+      const matchesSize = selectedSize === 'TODOS' || (Array.isArray(p.sizes) && p.sizes.some(s => {
+        const sName = typeof s === 'string' ? s : s.size;
+        const sStock = typeof s === 'string' ? (p.stock || 0) : Number(s.stock || 0);
+        return sName === selectedSize && sStock > 0;
+      }));
+      return matchesCat && matchesSearch && matchesSize;
     });
-  }, [selectedCategory, searchQuery, products]);
+  }, [selectedCategory, searchQuery, selectedSize, products]);
+
+  const availableSizes = useMemo(() => {
+    const set = new Set();
+    (products || []).forEach(p => {
+      if (p.stock <= 0) return;
+      (p.sizes || []).forEach(s => {
+        const sName = typeof s === 'string' ? s : s.size;
+        const sStock = typeof s === 'string' ? (p.stock || 0) : Number(s.stock || 0);
+        if (sName && sStock > 0) set.add(sName);
+      });
+    });
+    return ['TODOS', ...Array.from(set)];
+  }, [products]);
+
+  const handleSearchMyOrders = async () => {
+    const phone = String(myOrdersPhone || '').replace(/\D/g, '');
+    if (phone.length < 10) { showToast('Digite um WhatsApp válido com DDD.', 'error'); return; }
+    setMyOrdersLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('phone', phone)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setMyOrdersResults(data || []);
+    } catch (e) {
+      showToast('Erro ao buscar pedidos: ' + (e?.message || 'tente novamente'), 'error');
+      setMyOrdersResults([]);
+    } finally {
+      setMyOrdersLoading(false);
+    }
+  };
 
   if (isAdmin) {
     return (
@@ -1393,9 +1503,22 @@ export default function App() {
         
         <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 mask-linear touch-pan-x">
           {categories.map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{cat}</button>
+            <button key={cat} onClick={() => setSelectedCategory(cat)} data-testid={`category-filter-${cat}`} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{cat}</button>
           ))}
         </div>
+
+        {availableSizes.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar mask-linear touch-pan-x items-center">
+            <span className="text-[9px] font-black uppercase text-zinc-600 tracking-widest shrink-0 pr-1">Tamanho:</span>
+            {availableSizes.map(sz => (
+              <button key={sz} onClick={() => setSelectedSize(sz)} data-testid={`size-filter-${sz}`} className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedSize === sz ? 'bg-emerald-500 text-zinc-950 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-transparent text-zinc-500 border-white/10'}`}>{sz}</button>
+            ))}
+          </div>
+        )}
+
+        <button onClick={() => setShowMyOrders(true)} data-testid="btn-my-orders" className="w-full py-3 bg-zinc-900/50 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:border-emerald-500/30 transition-colors flex items-center justify-center gap-2">
+          <ClipboardList size={14} className="text-emerald-500"/> Meus Pedidos
+        </button>
 
         {filteredProducts.length === 0 ? (
            <div className="text-center py-20 opacity-50 animate-in">
@@ -1410,7 +1533,8 @@ export default function App() {
                return (
                  <div key={product.id} onClick={() => handleProductClick(product)} className={`group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 cursor-pointer active:scale-[0.98]'}`}>
                    
-                   {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse">Restam {product.stock}</div>}
+                   {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
+                  {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
                    <div className="aspect-[3/4] relative bg-zinc-900">
                      <img src={product.image} className={`w-full h-full object-cover transition-all ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-90 group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
@@ -1655,6 +1779,72 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showMyOrders && (
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="modal-my-orders">
+          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-5 shadow-2xl border border-white/10 animate-in relative overflow-hidden max-h-[90vh] flex flex-col">
+            <button onClick={() => { setShowMyOrders(false); setMyOrdersResults(null); setMyOrdersPhone(''); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation z-10" data-testid="btn-close-my-orders"><X size={16}/></button>
+            <div className="text-center space-y-2 shrink-0">
+              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20"><ClipboardList size={28}/></div>
+              <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Meus Pedidos</h3>
+              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Digite seu WhatsApp para consultar</p>
+            </div>
+
+            <div className="flex gap-2 shrink-0">
+              <input
+                placeholder="Ex: 34999999999"
+                type="tel"
+                className="flex-1 p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/30 client-input"
+                value={myOrdersPhone}
+                onChange={(e) => setMyOrdersPhone(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMyOrders(); }}
+                data-testid="input-my-orders-phone"
+              />
+              <button onClick={handleSearchMyOrders} disabled={myOrdersLoading} className="px-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 disabled:opacity-50" data-testid="btn-search-my-orders">
+                {myOrdersLoading ? '...' : 'Buscar'}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 -mx-2 px-2">
+              {myOrdersResults === null ? (
+                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Informe seu número acima</div>
+              ) : myOrdersResults.length === 0 ? (
+                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Nenhum pedido encontrado para este número</div>
+              ) : (
+                myOrdersResults.map((row) => {
+                  const its = typeof row.items === 'string' ? (() => { try { return JSON.parse(row.items); } catch { return []; } })() : (row.items || []);
+                  const st = String(row.status || 'NOVO').toUpperCase();
+                  const stMap = { 'CONFIRMED': 'CONCLUÍDO', 'CONCLUIDO': 'CONCLUÍDO', 'CANCELLED': 'CANCELADO' };
+                  const status = stMap[st] || st;
+                  const color = status === 'CONCLUÍDO' ? 'text-emerald-500 bg-emerald-500/10' : status === 'CANCELADO' ? 'text-red-500 bg-red-500/10' : status === 'EM ATENDIMENTO' ? 'text-amber-500 bg-amber-500/10' : 'text-blue-500 bg-blue-500/10';
+                  return (
+                    <div key={row.id} className="bg-zinc-900 rounded-2xl p-4 border border-white/5" data-testid={`my-order-${row.order_number}`}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-black uppercase text-white">#{row.order_number}</span>
+                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${color}`}>{status}</span>
+                      </div>
+                      <div className="text-[9px] text-zinc-500 font-bold uppercase mb-2">{row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : ''}</div>
+                      <div className="space-y-1">
+                        {(its || []).map((it, i) => (
+                          <div key={i} className="text-[10px] text-zinc-300 font-bold flex justify-between">
+                            <span className="truncate pr-2">{it.qty || 1}x {it.name} <span className="text-emerald-500">({it.size || 'U'})</span></span>
+                            <span className="text-zinc-500 shrink-0">R$ {Number(it.price || 0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
+                        <span className="text-[9px] text-zinc-500 font-black uppercase">Total</span>
+                        <span className="text-[13px] font-black text-emerald-500">R$ {Number(row.value || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');

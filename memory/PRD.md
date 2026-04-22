@@ -17,7 +17,7 @@ O usuário tinha várias falhas acumuladas no seu site catálogo:
 - **Credenciais admin:** user `Fluxo034` / senha `METODOFLUXO` (gesto duplo-toque no footer abre login)
 
 ## Correções aplicadas (22/04/2026)
-### Bug 1,2,3 — Checkout / Supabase / WhatsApp
+### Passo 1 — Checkout / Supabase / WhatsApp
 - `handleFinalize` estava enviando payload com schema errado (`customer`, `total`) → Supabase rejeitava silenciosamente
 - **Correção:** payload agora usa o schema real `{order_number, name, phone, items, value, status}`
 - Agora o pedido é registrado no Supabase → polling de 5s sincroniza no painel CRM
@@ -26,18 +26,28 @@ O usuário tinha várias falhas acumuladas no seu site catálogo:
 - Validações básicas (nome, telefone 10+ dígitos, carrinho não-vazio) antes do submit
 - **Testado:** criado pedido #94158 e confirmado via API do Supabase ✅
 
-### Bug 4 — Produtos sincronizados
-- `upsertProduct` + polling de 5s já funcionavam; confirmado que aparecem em outros navegadores (validado via API: produto "CAMISA PREMIUM" criada pelo admin aparece no GET /products)
+### Passo 1 — Notificações do admin
+- 🔔 Badge vermelho pulsante no ícone CRM com contador de pedidos novos
+- 🔊 Som de notificação (Web Audio API, sem asset externo)
+- 🔔 Push do navegador/celular (permissão solicitada ao logar)
+- `updateOrderStatus` agora persiste no Supabase (antes era só local)
 
-### Novas funcionalidades
-- 🔔 **Badge de novos pedidos** — contador vermelho pulsante no ícone CRM do painel
-- 🔊 **Som de notificação** — beep sintetizado (Web Audio API, sem asset externo) quando chega pedido novo
-- 🔔 **Notificação de desktop/celular** — pede permissão ao logar; aparece como push
-- ✅ `updateOrderStatus` agora persiste no Supabase (antes era só local)
-- `mapOrderRow` normaliza formatos de `items` (string JSON ou array), status (case-insensitive)
+### Passo 2 (22/04/2026) — Melhorias de e-commerce
+Lógica de venda confirmada (já existia, validada com o usuário):
+- Pedido novo → NÃO baixa estoque, vai pro CRM como "NOVO"
+- Admin "Concluir" → baixa estoque do tamanho, soma na Receita e TM
+- Admin "Cancelar" → não mexe em nada
+- Produto com todos tamanhos = 0 → some do catálogo cliente, fica visível no admin
+
+Novas features implementadas:
+- 🔥 **Badges** "MAIS VENDIDO (Top)" (sales ≥ 10, ícone Flame) e já tinha "Restam X" (≤3)
+- 🔍 **Filtro por tamanho disponível** — chip horizontal acima do grid, lista só tamanhos com estoque > 0
+- 📊 **Gráfico real de vendas** (últimos 7 dias) no Dashboard usando `recharts` — barras por dia com tooltip de valor e pedidos. Receita no topo agora é apenas de pedidos CONCLUÍDOS (não mais todos não-cancelados)
+- 📥 **Exportar CSV** no CRM — botão no topo, gera arquivo `pedidos-YYYY-MM-DD.csv` com BOM UTF-8 (abre no Excel)
+- 👤 **"Meus Pedidos" do cliente** — botão no home, cliente digita WhatsApp e vê seus pedidos (query direta no Supabase por `phone`)
 
 ### Ajustes de infra
-- `vite.config.ts`: `allowedHosts: true` (para o preview externo do Emergent funcionar)
+- `vite.config.ts`: `allowedHosts: true` (preview externo do Emergent)
 
 ## Backlog (P0/P1)
 ### P0 — já combinado com usuário
