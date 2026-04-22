@@ -14,7 +14,8 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { supabase } from './lib/supabaseClient';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -1145,9 +1146,19 @@ export default function App() {
 
   const handleFinalize = async () => {
     const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
-    const itemsPayload = cart.map(i => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, size: i.size, qty: i.quantity, image: i.image }));
+    const customerName = (currentLead.name || '').trim() || 'Cliente não informado';
+    const customerPhone = (currentLead.phone || '').replace(/\D/g, '') || '00000000000';
+    const itemsPayload = (cart || []).map(i => ({
+      id: i.id ?? 0,
+      name: i.name || 'Produto sem nome',
+      sku: i.sku || '',
+      price: Number(i.price || 0),
+      size: i.size || 'U',
+      qty: Number(i.quantity || 1),
+      image: i.image || ''
+    }));
     const orderData = {
-      customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
+      customer: { name: customerName, phone: customerPhone, orderNumber: orderNum },
       items: itemsPayload,
       total: Number(subtotal.toFixed(2)),
       notes: '',
@@ -1156,9 +1167,17 @@ export default function App() {
     const itemsText = cart
       .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
       .join('\n');
-    const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${currentLead.name || 'Não informado'}\nWhatsApp: ${currentLead.phone || 'Não informado'}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
+    const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
 
-    createOrder(orderData).catch(err => console.error('Erro silencioso no banco:', err));
+    const { data, error } = await supabase.from('orders').insert([orderData]).select().single();
+    if (error) {
+      console.error('Erro detalhado do Supabase:', error.message, error.details);
+      showToast('Pedido não foi salvo no CRM. Verifique permissões RLS.', 'error');
+    } else {
+      console.log('Pedido salvo no banco:', orderNum, data?.id);
+      showToast('Pedido registrado!');
+      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch (_) {}
+    }
 
     const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
     window.location.href = whatsappUrl;
