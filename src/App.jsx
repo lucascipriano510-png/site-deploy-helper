@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { 
   Plus, Minus, Trash2, X, Search, LayoutDashboard, 
   ShoppingBag, Home, Power, Package, 
@@ -15,7 +14,8 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { supabase } from './lib/supabaseClient';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -66,36 +66,6 @@ const DEFAULT_CONFIG = {
     'DESIGN AUTÊNTICO E EXCLUSIVO'
   ]
 };
-
-// Fallback temporario para garantir checkout funcional no App.jsx
-const INLINE_SUPABASE_URL = 'https://tapgnlrjhrhewqlpahvg.supabase.co';
-const INLINE_SUPABASE_ANON_KEY = 'sb_publishable_XaGrDdX2df8qolf2WocwuQ_FsVP1-kW';
-const inlineSupabase = createClient(INLINE_SUPABASE_URL, INLINE_SUPABASE_ANON_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-});
-
-async function createOrderInline({ customer, items, total, notes = '', status = 'pending' }) {
-  const safeCustomer = {
-    name: String(customer?.name || 'Cliente não informado').trim(),
-    phone: String(customer?.phone || '').replace(/\D/g, '') || '00000000000',
-    orderNumber: String(customer?.orderNumber || ''),
-    address: String(customer?.address || ''),
-  };
-  const safeItems = Array.isArray(items) ? items : [];
-  const { data, error } = await inlineSupabase
-    .from('orders')
-    .insert([{
-      customer: safeCustomer,
-      items: safeItems,
-      total: Number(total || 0),
-      notes: String(notes || ''),
-      status: String(status || 'pending')
-    }])
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
 
 // ==========================================
 // 2. FUNÇÕES DE TRACKING E UTILITÁRIOS
@@ -1066,6 +1036,7 @@ export default function App() {
   const [selectedSizes, setSelectedSizes] = useState({});
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [currentLead, setCurrentLead] = useState({ name: '', phone: '' });
   const [toast, setToast] = useState(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -1175,41 +1146,55 @@ export default function App() {
   };
 
   const handleFinalize = async () => {
-    console.log('Botão clicado!');
-    const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
-    const customerName = (currentLead.name || '').trim() || 'Cliente não informado';
-    const customerPhone = (currentLead.phone || '').replace(/\D/g, '') || '00000000000';
-    const itemsPayload = (cart || []).map(i => ({
-      id: i.id ?? 0,
-      name: i.name || 'Produto sem nome',
-      sku: i.sku || '',
-      price: Number(i.price || 0),
-      size: i.size || 'U',
-      qty: Number(i.quantity || 1),
-      image: i.image || ''
-    }));
-    const orderData = {
-      customer: { name: customerName, phone: customerPhone, orderNumber: orderNum },
-      items: itemsPayload,
-      total: Number(subtotal.toFixed(2)),
-      notes: '',
-      status: 'pending',
-    };
-    const itemsText = cart
-      .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
-      .join('\n');
-    const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
-
+    setIsLoading(true);
     try {
-      await createOrderInline(orderData);
-      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch (_) {}
-    } catch (error) {
-      console.error('Erro detalhado do Supabase:', error?.message, error?.details);
-      showToast('Pedido não foi salvo no CRM. Verifique permissões RLS.', 'error');
-    } finally {
+      if (typeof createOrder !== 'function') {
+        throw new Error('Função createOrder não foi importada corretamente.');
+      }
+
+      const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
+      const customerName = (currentLead.name || '').trim() || 'Cliente não informado';
+      const customerPhone = (currentLead.phone || '').replace(/\D/g, '') || '00000000000';
+      const itemsPayload = (cart || []).map(i => ({
+        id: i.id ?? 0,
+        name: i.name || 'Produto sem nome',
+        sku: i.sku || '',
+        price: Number(i.price || 0),
+        size: i.size || 'U',
+        qty: Number(i.quantity || 1),
+        image: i.image || ''
+      }));
+      const orderData = {
+        customer: { name: customerName, phone: customerPhone, orderNumber: orderNum },
+        items: itemsPayload,
+        total: Number(subtotal.toFixed(2)),
+        notes: '',
+        status: 'pending',
+      };
+
+      console.log('[checkout] payload enviado para orders:', orderData);
+      const { data, error } = await supabase.from('orders').insert([orderData]).select().single();
+      if (error) throw new Error(error.message);
+      console.log('[checkout] pedido salvo com sucesso:', data);
+
+      const itemsText = cart
+        .map(i => `• ${i.name} | Tam: ${i.size} | R$ ${(i.price || 0).toFixed(2)} x${i.quantity}`)
+        .join('\n');
+      const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${subtotal.toFixed(2)}\nPedido: #${orderNum}`;
       const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
-      console.log('Tentando WhatsApp...');
+
+      setWhatsappLink(whatsappUrl);
+      setCheckoutOrderNumber(orderNum);
+      setCheckoutSuccess(false);
+      setShowLeadModal(false);
+      setShowCart(false);
+      setCart([]);
       window.location.href = whatsappUrl;
+    } catch (error) {
+      console.error('[checkout] erro ao finalizar pedido:', error);
+      window.alert('Erro ao registrar pedido no CRM. Verifique o console para debug.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1553,7 +1538,7 @@ export default function App() {
                  <div className="space-y-4 relative z-10 text-left pt-6">
                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">Nome Completo</label><input placeholder="Ex: João da Silva" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.name} onChange={e => setCurrentLead({...currentLead, name: e.target.value})} /></div>
                    <div className="space-y-1"><label className="text-[9px] font-black uppercase text-zinc-500 px-2 tracking-widest">WhatsApp (Com DDD)</label><input placeholder="Ex: 34999999999" type="tel" className="w-full p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-white/30 shadow-inner client-input" value={currentLead.phone} onChange={e => setCurrentLead({...currentLead, phone: e.target.value.replace(/\D/g, '')})} /></div>
-                 <button onClick={handleFinalize} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation">Finalizar Pedido via WhatsApp <Zap size={14}/></button>
+                 <button onClick={handleFinalize} disabled={isLoading} className="w-full py-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 mt-2 flex justify-center items-center gap-2 touch-manipulation">{isLoading ? 'Processando...' : 'Finalizar Pedido via WhatsApp'} <Zap size={14}/></button>
                 </div>
                 <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-600 flex items-center justify-center gap-1 opacity-70 mt-6"><Lock size={10}/> Ambiente 100% Seguro</p>
               </div>
