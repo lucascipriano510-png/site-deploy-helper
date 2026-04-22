@@ -1137,22 +1137,27 @@ export default function App() {
     setSelectedSizes({});
   };
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
     if (!currentLead.name || currentLead.phone.length < 10) { showToast('Preencha os dados corretamente.', 'error'); return; }
     setIsRedirecting(true);
     const orderNum = Math.floor(10000 + Math.random() * 90000).toString();
-    const updatedProducts = products.map(p => {
-      const items = cart.filter(item => item.id === p.id);
-      if (items.length === 0) return p;
-      const newSizes = (p.sizes || []).map(s => {
-        const sName = typeof s === 'string' ? s : (s.size || 'U');
-        const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-        const bought = items.filter(i => i.size === sName).reduce((acc, curr) => acc + curr.quantity, 0);
-        return { size: sName, stock: Math.max(0, sStock - bought) };
+    const itemsPayload = cart.map(i => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, size: i.size, qty: i.quantity, image: i.image }));
+    try {
+      // Sistema 3.0: cria pedido como PENDENTE no Supabase. NÃO mexe no estoque agora.
+      await createOrder({
+        customer: { name: currentLead.name, phone: currentLead.phone, orderNumber: orderNum },
+        items: itemsPayload,
+        total: Number(subtotal.toFixed(2)),
+        notes: '',
       });
-      return { ...p, sizes: newSizes, stock: newSizes.reduce((acc, curr) => acc + curr.stock, 0), sales: (p.sales || 0) + items.reduce((a,b)=>a+b.quantity,0) };
-    });
-    setLeads([{ ...currentLead, id: Date.now(), orderNumber: orderNum, date: new Date().toLocaleString('pt-BR'), value: subtotal, items: cart.map(i=>({id:i.id,name:i.name,sku:i.sku,price:i.price,size:i.size,quantity:i.quantity})), status: 'NOVO' }, ...leads]); setProducts(updatedProducts);
+      // Recarrega leads (não precisa esperar polling)
+      try { const rows = await fetchOrders(); setLeads(rows.map(mapOrderRow)); } catch(_) {}
+    } catch (err) {
+      console.error('[orders] createOrder falhou:', err);
+      showToast('Erro ao salvar pedido. Tente novamente.', 'error');
+      setIsRedirecting(false);
+      return;
+    }
     const itemsText = cart.map(i => `• [${i.sku}] ${i.name} (${i.size}) x${i.quantity}`).join('\n');
     const msg = `*NOVO PEDIDO: ${config.brandName}*\n*PEDIDO:* #${orderNum}\n\n*CLIENTE:* ${currentLead.name}\n*CONTATO:* ${currentLead.phone}\n\n*ITENS:*\n${itemsText}\n\n*VALOR:* R$ ${subtotal.toFixed(2)}\n*FRETE:* A combinar`;
     const whatsappUrl = `https://api.whatsapp.com/send?phone=${config.whatsapp}&text=${encodeURIComponent(msg)}`;
