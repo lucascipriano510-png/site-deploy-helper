@@ -1,13 +1,13 @@
 import { supabase } from './supabaseClient';
 
-// Cria um pedido novo (status pending). NÃO mexe no estoque.
-export async function createOrder({ customer, items, total, notes = '', status = 'pending' }) {
-  const safeCustomer = {
-    name: String(customer?.name || 'Cliente não informado').trim(),
-    phone: String(customer?.phone || '').replace(/\D/g, '') || '00000000000',
-    orderNumber: String(customer?.orderNumber || ''),
-    address: String(customer?.address || ''),
-  };
+// Schema real da tabela `orders`:
+// id | order_number | name | phone | items (jsonb) | value | status | created_at
+
+// Cria um pedido novo (status NOVO). NÃO mexe no estoque.
+export async function createOrder({ customer, items, total, notes = '', status = 'NOVO' }) {
+  const name = String(customer?.name || 'Cliente não informado').trim();
+  const phone = String(customer?.phone || '').replace(/\D/g, '') || '00000000000';
+  const orderNumber = String(customer?.orderNumber || Math.floor(10000 + Math.random() * 90000));
   const safeItems = Array.isArray(items)
     ? items.map((item) => ({
         id: Number(item?.id || 0),
@@ -15,17 +15,23 @@ export async function createOrder({ customer, items, total, notes = '', status =
         sku: String(item?.sku || ''),
         price: Number(item?.price || 0),
         size: String(item?.size || 'U'),
-        qty: Number(item?.qty || 1),
+        qty: Number(item?.qty || item?.quantity || 1),
         image: String(item?.image || ''),
       }))
     : [];
-  const safeTotal = Number(total || 0);
-  const safeNotes = String(notes || '');
-  const safeStatus = String(status || 'pending');
+
+  const payload = {
+    order_number: orderNumber,
+    name,
+    phone,
+    items: safeItems,
+    value: Number(total || 0),
+    status: String(status || 'NOVO'),
+  };
 
   const { data, error } = await supabase
     .from('orders')
-    .insert([{ customer: safeCustomer, items: safeItems, total: safeTotal, notes: safeNotes, status: safeStatus }])
+    .insert([payload])
     .select()
     .single();
   if (error) throw error;
@@ -42,15 +48,14 @@ export async function fetchOrders() {
   return data || [];
 }
 
-// Confirma a venda: muda status para "confirmed" E decrementa estoque
-// apenas neste momento (regra do Sistema 3.0).
+// Confirma a venda: muda status para "CONCLUÍDO" E decrementa estoque
 export async function confirmOrderSale(order, products) {
   // 1) Atualiza estoque de cada item
   for (const item of order.items || []) {
     const product = products.find(p => p.id === item.id);
     if (!product) continue;
 
-    const qty = Number(item.qty || 1);
+    const qty = Number(item.qty || item.quantity || 1);
     const newStock = Math.max(0, Number(product.stock || 0) - qty);
     const newSales = Number(product.sales || 0) + qty;
 
@@ -71,10 +76,10 @@ export async function confirmOrderSale(order, products) {
     if (upErr) throw upErr;
   }
 
-  // 2) Marca pedido como confirmado
+  // 2) Marca pedido como CONCLUÍDO
   const { data, error } = await supabase
     .from('orders')
-    .update({ status: 'confirmed' })
+    .update({ status: 'CONCLUÍDO' })
     .eq('id', order.id)
     .select()
     .single();
@@ -82,11 +87,23 @@ export async function confirmOrderSale(order, products) {
   return data;
 }
 
-// Cancela pedido (não devolve estoque porque a confirmação é que tira)
+// Cancela pedido
 export async function cancelOrder(orderId) {
   const { data, error } = await supabase
     .from('orders')
-    .update({ status: 'cancelled' })
+    .update({ status: 'CANCELADO' })
+    .eq('id', orderId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Atualiza status genérico (ex: EM ATENDIMENTO)
+export async function updateOrderStatus(orderId, status) {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ status })
     .eq('id', orderId)
     .select()
     .single();

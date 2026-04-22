@@ -14,7 +14,7 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote } from './lib/orders';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 
 // ==========================================
@@ -703,7 +703,8 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         setLeads(leads.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
-        // Outros status (NOVO, EM ATENDIMENTO) — atualização só local por enquanto
+        // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
+        await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
         setLeads(leads.map(l => l.id === id ? { ...l, status: newStatus } : l));
         showToast('Status atualizado.');
       }
@@ -994,26 +995,104 @@ export default function App() {
 
   // ======= PEDIDOS (LEADS): agora vivem no Supabase =======
   const [leads, setLeadsState] = useState([]);
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const seenOrderIdsRef = useRef(null); // Set dos IDs já vistos
   // Mapeia row do Supabase -> shape interno usado pelo painel
-  const mapOrderRow = (row) => ({
-    id: row.id,
-    orderNumber: (row.customer && row.customer.orderNumber) || String(row.id).slice(0, 5),
-    name: (row.customer && row.customer.name) || '',
-    phone: (row.customer && row.customer.phone) || '',
-    address: (row.customer && row.customer.address) || '',
-    date: row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : '',
-    value: Number(row.total || 0),
-    items: row.items || [],
-    status: row.status === 'confirmed' ? 'CONCLUÍDO' : row.status === 'cancelled' ? 'CANCELADO' : 'NOVO',
-    _raw: row,
-  });
+  // Schema real: { id, order_number, name, phone, items (jsonb|string), value, status, created_at }
+  const mapOrderRow = (row) => {
+    let parsedItems = row.items;
+    if (typeof parsedItems === 'string') {
+      try { parsedItems = JSON.parse(parsedItems); } catch (e) { parsedItems = []; }
+    }
+    const items = Array.isArray(parsedItems) ? parsedItems.map(it => ({
+      ...it,
+      quantity: Number(it.qty ?? it.quantity ?? 1),
+    })) : [];
+    const statusRaw = String(row.status || 'NOVO').toUpperCase();
+    const statusMap = {
+      'NOVO': 'NOVO',
+      'PENDING': 'NOVO',
+      'EM ATENDIMENTO': 'EM ATENDIMENTO',
+      'CONFIRMED': 'CONCLUÍDO',
+      'CONCLUÍDO': 'CONCLUÍDO',
+      'CONCLUIDO': 'CONCLUÍDO',
+      'CANCELLED': 'CANCELADO',
+      'CANCELADO': 'CANCELADO',
+    };
+    return {
+      id: row.id,
+      orderNumber: row.order_number || String(row.id).slice(0, 5),
+      name: row.name || '',
+      phone: row.phone || '',
+      address: '',
+      date: row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : '',
+      value: Number(row.value || 0),
+      items,
+      status: statusMap[statusRaw] || 'NOVO',
+      _raw: row,
+    };
+  };
   const setLeads = setLeadsState; // mantém compat
+
+  // Toca som de notificação (beep sintetizado — sem asset externo)
+  const playNotifySound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      [0, 0.18].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now + delay);
+        osc.frequency.exponentialRampToValueAtTime(1320, now + delay + 0.12);
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.35, now + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.16);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.18);
+      });
+      setTimeout(() => ctx.close().catch(() => {}), 1200);
+    } catch (e) { /* silencioso */ }
+  };
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
         const rows = await fetchOrders();
-        if (alive) setLeadsState(rows.map(mapOrderRow));
+        if (!alive) return;
+        const mapped = rows.map(mapOrderRow);
+        setLeadsState(mapped);
+
+        // Detecta pedidos novos (depois da 1a carga)
+        const currentIds = new Set(mapped.map(o => o.id));
+        if (seenOrderIdsRef.current === null) {
+          seenOrderIdsRef.current = currentIds;
+        } else {
+          const newOnes = mapped.filter(o => !seenOrderIdsRef.current.has(o.id) && o.status === 'NOVO');
+          if (newOnes.length > 0) {
+            seenOrderIdsRef.current = currentIds;
+            // Só notifica se for admin logado
+            if (sessionStorage.getItem(`@${APP_ID}:admin`) === 'true') {
+              setNewOrdersCount((prev) => prev + newOnes.length);
+              playNotifySound();
+              try {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  const last = newOnes[0];
+                  new Notification('🔔 Novo pedido', {
+                    body: `${last.name} — R$ ${last.value.toFixed(2)}`,
+                    tag: `order-${last.id}`,
+                  });
+                }
+              } catch (e) {}
+            }
+          } else {
+            seenOrderIdsRef.current = currentIds;
+          }
+        }
       } catch (e) { console.warn('[orders] fetch falhou:', e?.message); }
     };
     load();
@@ -1094,6 +1173,12 @@ export default function App() {
       setLoginUser('');
       setLoginPass('');
       showToast('Acesso Concedido!', 'success');
+      // Pede permissão de notificação (silencioso se usuário recusar)
+      try {
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission().catch(() => {});
+        }
+      } catch (e) {}
     } else {
       showToast('Credenciais Inválidas!', 'error');
     }
@@ -1146,12 +1231,17 @@ export default function App() {
   };
 
   const handleFinalize = async () => {
-    let payloadSanitizado = null;
     try {
       setIsLoading(true);
+
+      // Validação básica
+      const customerName = String(currentLead?.name ?? '').trim();
+      const customerPhone = String(currentLead?.phone ?? '').replace(/\D/g, '');
+      if (!customerName) { showToast('Informe seu nome.', 'error'); setIsLoading(false); return; }
+      if (customerPhone.length < 10) { showToast('Informe um WhatsApp válido com DDD.', 'error'); setIsLoading(false); return; }
+      if (!cart || cart.length === 0) { showToast('Carrinho vazio.', 'error'); setIsLoading(false); return; }
+
       const orderNum = String(Math.floor(10000 + Math.random() * 90000));
-      const customerName = String(currentLead?.name ?? '').trim() || 'Cliente não informado';
-      const customerPhone = String(currentLead?.phone ?? '').replace(/\D/g, '') || '';
       const totalPedido = Number(subtotal) || 0;
       const itensNormalizados = (cart || []).map((item) => ({
         id: Number(item?.id) || 0,
@@ -1163,39 +1253,44 @@ export default function App() {
         image: String(item?.image ?? '')
       }));
 
-      payloadSanitizado = {
+      // Schema real da tabela: order_number | name | phone | items (jsonb) | value | status
+      const payload = {
         order_number: orderNum,
         name: customerName,
-        phone: customerPhone || '',
-        items: JSON.stringify(itensNormalizados || []),
-        total: Number(totalPedido) || 0
+        phone: customerPhone,
+        items: itensNormalizados,
+        value: totalPedido,
+        status: 'NOVO',
       };
 
-      console.log('[checkout] payload sanitizado antes do insert:', payloadSanitizado);
+      console.log('[checkout] enviando pedido:', payload);
 
-      const { error } = await supabase
-        .from('orders')
-        .insert([payloadSanitizado]);
+      const { error } = await supabase.from('orders').insert([payload]);
       if (error) throw new Error(error.message);
 
-      console.log('[checkout] sucesso no Supabase:', payloadSanitizado.order_number);
-
+      // Monta mensagem WhatsApp
       const itemsText = itensNormalizados
         .map((item) => `• ${item.name} | Tam: ${item.size} | R$ ${item.price.toFixed(2)} x${item.qty}`)
         .join('\n');
-      const message = `Olá, gostaria de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone || 'Não informado'}\n\nItens:\n${itemsText || 'Carrinho sem itens'}\n\nTotal: R$ ${totalPedido.toFixed(2)}\nPedido: #${orderNum}`;
-      const whatsappUrl = `https://wa.me/5534984148067?text=${encodeURIComponent(message)}`;
+      const message = `Olá, acabei de finalizar meu pedido na ${config.brandName}.\n\nCliente: ${customerName}\nWhatsApp: ${customerPhone}\n\nItens:\n${itemsText}\n\nTotal: R$ ${totalPedido.toFixed(2)}\nPedido: #${orderNum}`;
+
+      // Usa whatsapp do config (fallback pro hardcoded caso vazio)
+      const waNumber = String(config?.whatsapp || '5534984148067').replace(/\D/g, '');
+      const whatsappUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`;
+
+      trackPixel('Purchase', { value: totalPedido, currency: 'BRL', orderNumber: orderNum });
 
       setWhatsappLink(whatsappUrl);
       setCheckoutOrderNumber(orderNum);
-      setCheckoutSuccess(false);
-      setShowLeadModal(false);
-      setShowCart(false);
+      setCheckoutSuccess(true);   // Mostra tela de sucesso
       setCart([]);
-      window.location.href = whatsappUrl;
+      showToast('Pedido registrado!', 'success');
+
+      // Abre WhatsApp em nova aba (não quebra se o popup for bloqueado)
+      try { window.open(whatsappUrl, '_blank'); } catch (e) { /* ignora */ }
     } catch (error) {
-      console.error('PAYLOAD TENTADO:', payloadSanitizado, 'ERRO:', error);
-      alert('Erro Supabase: ' + error.message);
+      console.error('[checkout] erro:', error);
+      showToast('Erro ao enviar pedido: ' + (error?.message || 'tente novamente'), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -1224,7 +1319,15 @@ export default function App() {
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
           <button onClick={() => setAdminTab('dashboard')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}`}><LayoutDashboard size={18}/><span className="text-[8px] font-black uppercase">Painel</span></button>
           <button onClick={() => setAdminTab('inventory')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'inventory' ? 'text-emerald-500' : 'text-zinc-500'}`}><Box size={18}/><span className="text-[8px] font-black uppercase">Estoque</span></button>
-          <button onClick={() => setAdminTab('leads')} className={`flex flex-col items-center gap-1 transition-colors relative ${adminTab === 'leads' ? 'text-emerald-500' : 'text-zinc-500'}`}><User size={18}/><span className="text-[8px] font-black uppercase">CRM</span></button>
+          <button onClick={() => { setAdminTab('leads'); setNewOrdersCount(0); }} className={`flex flex-col items-center gap-1 transition-colors relative ${adminTab === 'leads' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+            <User size={18}/>
+            {newOrdersCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-zinc-900 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]">
+                {newOrdersCount > 99 ? '99+' : newOrdersCount}
+              </span>
+            )}
+            <span className="text-[8px] font-black uppercase">CRM</span>
+          </button>
           <button onClick={() => setAdminTab('banners')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'banners' ? 'text-emerald-500' : 'text-zinc-500'}`}><Megaphone size={18}/><span className="text-[8px] font-black uppercase">Promo</span></button>
           <button onClick={() => setAdminTab('config')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'config' ? 'text-emerald-500' : 'text-zinc-500'}`}><Settings size={18}/><span className="text-[8px] font-black uppercase">Setup</span></button>
         </nav>
@@ -1524,12 +1627,15 @@ export default function App() {
                    type="button"
                    onClick={() => {
                      if (!whatsappLink) { showToast('Cadastre um número de WhatsApp válido no Master Control.', 'error'); return; }
-                     setShowLeadModal(false);
-                     setCheckoutSuccess(false);
-                     window.location.href = whatsappLink;
+                     window.open(whatsappLink, '_blank');
                    }}
                    className="w-full py-5 mt-4 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 flex justify-center items-center gap-2 touch-manipulation"
                  >Enviar WhatsApp <Zap size={14}/></button>
+                 <button
+                   type="button"
+                   onClick={() => { setShowLeadModal(false); setCheckoutSuccess(false); }}
+                   className="w-full py-3 mt-2 text-zinc-500 hover:text-white font-black text-[10px] uppercase tracking-widest transition-colors"
+                 >Fechar</button>
                </div>
              ) : (
                <div className="animate-in">
