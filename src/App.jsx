@@ -101,7 +101,7 @@ const AdminHeader = ({ handleLogout }) => (
 const AdminDashboard = ({ leads, products }) => {
   const validLeads = (leads || []).filter(l => l.status !== 'CANCELADO');
   const concludedLeads = (leads || []).filter(l => l.status === 'CONCLUÍDO');
-  const totalRevenue = concludedLeads.reduce((a, b) => a + (b.value || 0), 0);
+  const totalRevenue = concludedLeads.reduce((a, b) => a + parseFloat(b.value || 0), 0);
   const avgTicket = concludedLeads.length > 0 ? (totalRevenue / concludedLeads.length) : 0;
   
   // PROTEÇÃO CONTRA CRASH: (lead.items || []) blinda o sistema contra leads antigos sem items
@@ -396,10 +396,11 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
     const fd = new FormData(e.target);
     const data = {
       id: editMode === 'new' ? Date.now() : editMode.id,
+      sku: fd.get('sku').toUpperCase(),
       name: fd.get('name'),
-      sku: fd.get('sku'),
       price: parseFloat(fd.get('price')),
       category: fd.get('category').toUpperCase(),
+      collection_name: fd.get('collection_name')?.toUpperCase(),
       image: previewImage || editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400',
       stock: computedStock, 
       sales: editMode === 'new' ? 0 : editMode.sales,
@@ -647,8 +648,8 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
             </div>
             <div className="col-span-2 space-y-1">
                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Categoria</label>
-               <input name="category" defaultValue={editMode?.category} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none uppercase" required />
-            </div>
+              <input name="category" defaultValue={editMode?.category} placeholder="Categoria (ex: VESTUÁRIO)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+          <input name="collection_name" defaultValue={editMode?.collection_name} placeholder="Coleção (ex: VERÃO 2024)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />            </div>
             <div className="col-span-2 bg-zinc-950 p-4 rounded-[20px] border border-white/5 space-y-3 mt-2">
                <label className="text-[9px] font-black text-emerald-500 uppercase flex items-center gap-1"><Layers size={12}/> Grade de Tamanhos</label>
                {formSizes.map((item, idx) => (
@@ -703,15 +704,13 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
   // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
-  const [leadsFilter, setLeadsFilter] = useState('ativos');
+  const [leadsFilter, setLeadsFilter] = useState('NOVOS');
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
     const oldStatus = leadToUpdate.status || 'NOVO';
     try {
-      // Sistema 3.0: estoque só baixa quando admin confirma a venda (CONCLUÍDO)
-      if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
-        // monta order no formato esperado por confirmOrderSale
+      if (newStatus === 'CONCLUÍDO') {
         const orderForSale = {
           id: leadToUpdate._raw?.id || leadToUpdate.id,
           items: (leadToUpdate.items || []).map(i => ({
@@ -719,31 +718,30 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           })),
         };
         await confirmOrderSale(orderForSale, products);
-        // Atualiza local: marca como concluído. O `value` é preservado pelo spread,
-        // então o totalRevenue do Dashboard é recalculado em tempo real (useMemo).
-        // A persistência no Supabase já foi feita por confirmOrderSale acima.
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
-        // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
-        const updatedProducts = products.map(p => {
-          const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
-          if (itemsForP.length === 0) return p;
-          const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
-          const newSizes = (p.sizes || []).map(s => {
-            const sName = typeof s === 'string' ? s : (s.size || 'U');
-            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-            const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
-            return { size: sName, stock: Math.max(0, sStock - dec) };
+        
+        // Atualiza estoque localmente se for a primeira vez concluindo
+        if (oldStatus !== 'CONCLUÍDO') {
+          const updatedProducts = products.map(p => {
+            const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
+            if (itemsForP.length === 0) return p;
+            const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
+            const newSizes = (p.sizes || []).map(s => {
+              const sName = typeof s === 'string' ? s : (s.size || 'U');
+              const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+              const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
+              return { size: sName, stock: Math.max(0, sStock - dec) };
+            });
+            return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
           });
-          return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
-        });
-        setProducts(updatedProducts);
-        showToast('Venda confirmada e estoque atualizado!');
+          setProducts(updatedProducts);
+        }
+        showToast('Venda concluída!');
       } else if (newStatus === 'CANCELADO') {
         await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
-        // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
         await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
         showToast('Status atualizado.');
@@ -783,11 +781,16 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
     showToast('CSV exportado!');
   };
 
-  const concludedCount = (leads || []).filter(l => (l.status || 'NOVO') === 'CONCLUÍDO').length;
-  const activeCount = (leads || []).length - concludedCount;
+  const novosCount = (leads || []).filter(l => (l.status || 'NOVO') === 'NOVO' || l.status === 'EM ATENDIMENTO').length;
+  const concluidosCount = (leads || []).filter(l => l.status === 'CONCLUÍDO').length;
+  const canceladosCount = (leads || []).filter(l => l.status === 'CANCELADO').length;
+
   const visibleLeads = (leads || []).filter(l => {
     const st = l.status || 'NOVO';
-    return leadsFilter === 'concluidos' ? st === 'CONCLUÍDO' : st !== 'CONCLUÍDO';
+    if (leadsFilter === 'NOVOS') return st === 'NOVO' || st === 'EM ATENDIMENTO';
+    if (leadsFilter === 'CONCLUÍDOS') return st === 'CONCLUÍDO';
+    if (leadsFilter === 'CANCELADOS') return st === 'CANCELADO';
+    return true;
   });
 
   return (
@@ -798,27 +801,32 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           <Database size={12} className="text-emerald-500"/> CSV
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-900 rounded-2xl border border-white/5">
+      <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-900 rounded-2xl border border-white/5">
         <button
           type="button"
-          onClick={() => setLeadsFilter('ativos')}
-          data-testid="leads-filter-ativos"
-          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'ativos' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+          onClick={() => setLeadsFilter('NOVOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'NOVOS' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
+          Novos ({novosCount})
         </button>
         <button
           type="button"
-          onClick={() => setLeadsFilter('concluidos')}
-          data-testid="leads-filter-concluidos"
-          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'concluidos' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+          onClick={() => setLeadsFilter('CONCLUÍDOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CONCLUÍDOS' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
+          Concluídos ({concluidosCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setLeadsFilter('CANCELADOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CANCELADOS' ? 'bg-red-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+        >
+          Cancelados ({canceladosCount})
         </button>
       </div>
       {(!visibleLeads || visibleLeads.length === 0) ? (
         <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">
-          {leadsFilter === 'concluidos' ? 'Nenhum pedido concluído ainda.' : 'Nenhum pedido novo no momento.'}
+          Nenhum pedido nesta aba.
         </div>
       ) : visibleLeads.map(lead => (
         <div key={lead.id} className={`bg-zinc-900 rounded-[32px] border overflow-hidden ${expandedLead === lead.id ? 'border-white/20' : 'border-white/5'}`}>
@@ -842,9 +850,19 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
                 </div>
               ))}
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                {(lead.status === 'NOVO' || lead.status === 'EM ATENDIMENTO') && (
+                  <>
+                    <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
+                    <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                    <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                  </>
+                )}
+                {lead.status === 'CONCLUÍDO' && (
+                  <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                )}
+                {lead.status === 'CANCELADO' && (
+                  <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                )}
                 <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>
             </div>
@@ -889,7 +907,15 @@ const AdminBanners = ({ banners, setBanners, showToast }) => {
   const handleSaveBanner = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const data = { id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, title: fd.get('title'), subtitle: fd.get('subtitle'), buttonText: fd.get('buttonText'), image: previewBannerImage || editBannerMode?.image, active: fd.get('active') === 'on' };
+    const data = { 
+      id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, 
+      title: fd.get('title'), 
+      subtitle: fd.get('subtitle'), 
+      buttonText: fd.get('buttonText'), 
+      collection_name: fd.get('collection_name'),
+      image: previewBannerImage || editBannerMode?.image, 
+      active: fd.get('active') === 'on' 
+    };
     setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
     showToast('Banner salvo!'); setEditBannerMode(null);
   };
@@ -917,6 +943,7 @@ const AdminBanners = ({ banners, setBanners, showToast }) => {
           <input name="title" defaultValue={editBannerMode?.title} placeholder="Título" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" required />
           <input name="subtitle" defaultValue={editBannerMode?.subtitle} placeholder="Subtítulo" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" />
           <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+          <input name="collection_name" defaultValue={editBannerMode?.collection_name} placeholder="Coleção (Opcional)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />
           <label className="flex items-center gap-3 bg-zinc-950 p-4 rounded-2xl border border-white/5"><input type="checkbox" name="active" defaultChecked={editBannerMode === 'new' ? true : editBannerMode?.active} className="w-5 h-5 accent-emerald-500" /><span className="text-[11px] font-black uppercase text-white">Ativo no site</span></label>
           <button type="submit" disabled={isUploadingBanner} className="w-full py-4 bg-emerald-500 text-zinc-950 rounded-[20px] font-black uppercase text-[10px] tracking-widest">{isUploadingBanner ? 'Salvando...' : 'Confirmar'}</button>
         </form>
@@ -1256,8 +1283,7 @@ function App() {
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [myOrdersPhone, setMyOrdersPhone] = useState('');
   const [myOrdersResults, setMyOrdersResults] = useState(null);
-  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(f  const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSizes, setSelectedSizes] = useState({});
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
@@ -1269,11 +1295,10 @@ function App() {
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
   const [adminTab, setAdminTab] = useState('dashboard'); 
-
-  // Referência para o clique duplo
-  const lastTapRef = useRef(0);
-
-  useEffect(() => {
+  const [zoomImage, setZoomImage] = useState(null);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [activeSize, setActiveSize] = useState(null);
+  const lastTapRef = useRef(0);ffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) {
       viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
@@ -1353,16 +1378,11 @@ function App() {
   };
 
   const categories = useMemo(() => ['TODOS', ...new Set((products || []).map(p => p.category))], [products]);
-  const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
-
-  const handleProductClick = (product) => {
-    if (product.stock <= 0) {
-        showToast('Esta peça está esgotada no momento.', 'error');
-        return;
-    }
-    setSelectedSizes({}); 
+  const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [c  const handleProductClick = (product) => {
     setSelectedProduct(product);
-    trackPixel('ViewContent', { content_ids: [product.sku], content_name: product.name, value: product.price, currency: 'BRL' });
+    setActiveSize(null);
+    setShowProductModal(true);
+  };content_ids: [product.sku], content_name: product.name, value: product.price, currency: 'BRL' });
   };
 
   const handleSizeSelect = (sizeName, maxStock) => {
@@ -1372,23 +1392,34 @@ function App() {
       const qtyInCart = (cart || []).find(i => i.itemKey === itemKey)?.quantity || 0;
       if (currentQty + qtyInCart >= maxStock) { showToast(`Estoque máximo!`, 'error'); return prev; }
       return { ...prev, [sizeName]: currentQty + 1 };
-    });
-  };
-
-  const handleCommitToCart = () => {
+      const handleAddToCartFromModal = () => {
+    if (!activeSize) {
+      showToast('Selecione um tamanho primeiro.', 'error');
+      return;
+    }
+    
+    const sizeName = activeSize.size || 'U';
+    const itemKey = `${selectedProduct.id}-${sizeName}`;
     let updatedCart = [...cart];
-    Object.entries(selectedSizes).forEach(([sizeName, qty]) => {
-       const itemKey = `${selectedProduct.id}-${sizeName || 'U'}`;
-       const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
-       if (existingIdx >= 0) { updatedCart[existingIdx].quantity += qty; } 
-       else { updatedCart.push({ ...selectedProduct, size: sizeName || 'U', quantity: qty, itemKey }); }
-    });
+    const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
+    
+    if (existingIdx >= 0) {
+      updatedCart[existingIdx].quantity += 1;
+    } else {
+      updatedCart.push({
+        ...selectedProduct,
+        size: sizeName,
+        quantity: 1,
+        itemKey
+      });
+    }
+    
     setCart(updatedCart);
     setCartBounce(true);
     setTimeout(() => setCartBounce(false), 400);
-
-    trackPixel('AddToCart', { content_ids: [selectedProduct.sku], content_name: selectedProduct.name, value: selectedProduct.price, currency: 'BRL' });
     showToast(`Adicionado à sacola!`);
+    setShowProductModal(false);
+  };(`Adicionado à sacola!`);
     setSelectedProduct(null); 
     setSelectedSizes({});
   };
@@ -1469,9 +1500,10 @@ function App() {
         const sStock = typeof s === 'string' ? (p.stock || 0) : Number(s.stock || 0);
         return sName === selectedSize && sStock > 0;
       }));
-      return matchesCat && matchesSearch && matchesSize;
+      const matchesCollection = !activeCollectionFilter || p.collection_name === activeCollectionFilter;
+      return matchesCat && matchesSearch && matchesSize && matchesCollection;
     });
-  }, [selectedCategory, searchQuery, selectedSize, products]);
+  }, [selectedCategory, searchQuery, selectedSize, products, activeCollectionFilter]);
 
   const availableSizes = useMemo(() => {
     const set = new Set();
@@ -1583,7 +1615,19 @@ function App() {
                 <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col items-center text-center animate-slide-up">
                   <h2 className="text-3xl font-black text-white uppercase tracking-tighter shadow-black drop-shadow-lg">{banner.title}</h2>
                   <p className="text-[11px] font-bold text-zinc-300 uppercase tracking-widest mt-2 mb-6 shadow-black drop-shadow-md">{banner.subtitle}</p>
-                  <button onClick={() => document.getElementById('search-input').focus()} className="bg-emerald-500 text-zinc-950 px-8 py-3.5 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.4)]">{banner.buttonText}</button>
+                  <button 
+                    onClick={() => {
+                      if (banner.collection_name) {
+                        setActiveCollectionFilter(banner.collection_name);
+                        document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        document.getElementById('search-input')?.focus();
+                      }
+                    }} 
+                    className="bg-emerald-500 text-zinc-950 px-8 py-3.5 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.4)]"
+                  >
+                    {banner.buttonText}
+                  </button>
                 </div>
               </div>
             ))}
@@ -1632,11 +1676,21 @@ function App() {
           <input id="search-input" placeholder="O que você procura?" data-testid="input-search" className="w-full bg-zinc-900/50 backdrop-blur-sm border border-white/5 py-4 pl-14 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 mask-linear touch-pan-x">
+        <div id="catalog-section" className="flex gap-3 overflow-x-auto no-scrollbar pb-1 mask-linear touch-pan-x">
           {categories.map(cat => (
             <button key={cat} onClick={() => setSelectedCategory(cat)} data-testid={`category-filter-${cat}`} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10 hover:border-white/30'}`}>{cat}</button>
           ))}
         </div>
+
+        {activeCollectionFilter && (
+          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl animate-in">
+            <div className="flex flex-col">
+              <span className="text-[8px] font-black uppercase text-emerald-500 tracking-widest">Coleção Ativa</span>
+              <span className="text-xs font-black uppercase text-white">{activeCollectionFilter}</span>
+            </div>
+            <button onClick={() => setActiveCollectionFilter(null)} className="p-2 bg-emerald-500 text-zinc-950 rounded-xl active:scale-90 transition-transform"><X size={14}/></button>
+          </div>
+        )}
 
         {availableSizes.length > 1 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mask-linear touch-pan-x items-center">
@@ -1673,7 +1727,7 @@ function App() {
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
                    <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+	                     <img src={product.image} style={{ objectFit: 'cover', width: '100%', aspectRatio: '3/4', imageRendering: 'high-quality' }} className={`transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
                      
                      {isOutOfStock && (
                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
@@ -1769,50 +1823,61 @@ function App() {
         </div>
       )}
 
-      {selectedProduct && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
-          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] p-8 animate-slide-up border-t border-white/10 shadow-2xl pb-10">
-            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-            <div className="flex gap-6 mb-8">
-              <img src={selectedProduct.image} className="w-28 h-36 rounded-[20px] object-cover shadow-2xl border border-white/10" alt="Produto" />
-              <div className="flex flex-col justify-center flex-1">
-                <span className="text-[8px] font-black text-zinc-500 uppercase bg-zinc-900 px-2 py-1 rounded-md tracking-widest self-start">REF: {selectedProduct.sku}</span>
-                <h2 className="text-lg font-black text-white leading-tight uppercase mt-1">{selectedProduct.name}</h2>
-                <p className="text-2xl font-black text-emerald-500 mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
-              </div>
+      {showProductModal && selectedProduct && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in">
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={() => setShowProductModal(false)} />
+          <div className="relative bg-zinc-900 w-full max-w-md rounded-[40px] overflow-hidden border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+            <button onClick={() => setShowProductModal(false)} className="absolute top-6 right-6 z-20 p-3 bg-black/50 text-white rounded-full backdrop-blur-md active:scale-90 transition-transform"><X size={20}/></button>
+            
+            <div className="relative w-full aspect-[3/4] bg-black overflow-hidden group">
+              <img 
+                src={selectedProduct.image} 
+                style={{ objectFit: 'contain', width: '100%', maxHeight: '70vh', imageRendering: 'high-quality' }} 
+                className="w-full h-full transition-transform duration-500" 
+                alt={selectedProduct.name} 
+              />
+              <button onClick={() => setZoomImage(selectedProduct.image)} className="absolute bottom-6 right-6 p-4 bg-white text-zinc-950 rounded-full shadow-2xl active:scale-90 transition-transform"><ZoomIn size={20}/></button>
             </div>
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
-              <div className="grid grid-cols-4 gap-2">
-                {(selectedProduct.sizes || []).map((s, idx) => {
-                  const sz = typeof s === 'string' ? s : s.size;
-                  const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
-                  const qty = selectedSizes[sz] || 0;
-                  if (qty > 0) {
+
+            <div className="p-8 space-y-6 overflow-y-auto no-scrollbar">
+              <div className="space-y-1">
+                <span className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.3em]">Detalhes da Peça</span>
+                <h2 className="text-xl font-black text-white uppercase leading-tight">{selectedProduct.name}</h2>
+                <p className="text-2xl font-black text-white mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Selecione o Tamanho</span>
+                  {activeSize && <span className="text-[10px] font-black text-emerald-500 uppercase">Estoque: {activeSize.stock} un</span>}
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {(selectedProduct.sizes || []).map((s, idx) => {
+                    const sz = typeof s === 'string' ? s : s.size;
+                    const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
+                    const isSelected = activeSize?.size === sz;
                     return (
-                      <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
-                        <span className="text-xs font-black text-emerald-500">{sz}</span>
-                        <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
-                          <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
-                          <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
-                          <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
-                        </div>
-                      </div>
+                      <button 
+                        key={idx} 
+                        disabled={stock <= 0} 
+                        onClick={() => setActiveSize({ size: sz, stock })}
+                        className={`py-4 rounded-2xl border font-black text-sm transition-all touch-manipulation ${stock <= 0 ? 'opacity-20 bg-zinc-950 border-white/5 text-zinc-700' : isSelected ? 'bg-white text-zinc-950 border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-zinc-950 border-white/5 text-zinc-400 active:scale-95'}`}
+                      >
+                        {sz}
+                      </button>
                     );
-                  }
-                  return (
-                    <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
-                  );
-                })}
+                  })}
+                </div>
               </div>
-              <div className="pt-6 mt-4 border-t border-white/5">
-                <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
-                  {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
-                </button>
-              </div>
+
+              <button 
+                onClick={handleAddToCartFromModal}
+                disabled={!activeSize}
+                className={`w-full py-6 rounded-[24px] font-black text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 touch-manipulation ${!activeSize ? 'bg-zinc-800 text-zinc-600' : 'bg-emerald-500 text-zinc-950 shadow-[0_15px_30px_rgba(16,185,129,0.3)] active:scale-[0.98]'}`}
+              >
+                <ShoppingBag size={18}/> Adicionar à Sacola
+              </button>
             </div>
-            <button onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} className="absolute top-6 right-6 text-zinc-600 bg-zinc-900 rounded-full p-2 touch-manipulation"><X size={18}/></button>
           </div>
         </div>
       )}
