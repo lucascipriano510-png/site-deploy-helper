@@ -1283,7 +1283,8 @@ function App() {
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [myOrdersPhone, setMyOrdersPhone] = useState('');
   const [myOrdersResults, setMyOrdersResults] = useState(null);
-  const [myOrdersLoading, setMyOrdersLoading] = useState(f  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSizes, setSelectedSizes] = useState({});
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
@@ -1298,7 +1299,8 @@ function App() {
   const [zoomImage, setZoomImage] = useState(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [activeSize, setActiveSize] = useState(null);
-  const lastTapRef = useRef(0);ffect(() => {
+  const lastTapRef = useRef(0);
+  useEffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) {
       viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
@@ -1378,11 +1380,12 @@ function App() {
   };
 
   const categories = useMemo(() => ['TODOS', ...new Set((products || []).map(p => p.category))], [products]);
-  const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [c  const handleProductClick = (product) => {
+  const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
+
+  const handleProductClick = (product) => {
     setSelectedProduct(product);
     setActiveSize(null);
     setShowProductModal(true);
-  };content_ids: [product.sku], content_name: product.name, value: product.price, currency: 'BRL' });
   };
 
   const handleSizeSelect = (sizeName, maxStock) => {
@@ -1392,7 +1395,10 @@ function App() {
       const qtyInCart = (cart || []).find(i => i.itemKey === itemKey)?.quantity || 0;
       if (currentQty + qtyInCart >= maxStock) { showToast(`Estoque máximo!`, 'error'); return prev; }
       return { ...prev, [sizeName]: currentQty + 1 };
-      const handleAddToCartFromModal = () => {
+    });
+  };
+
+  const handleAddToCartFromModal = () => {
     if (!activeSize) {
       showToast('Selecione um tamanho primeiro.', 'error');
       return;
@@ -1419,9 +1425,6 @@ function App() {
     setTimeout(() => setCartBounce(false), 400);
     showToast(`Adicionado à sacola!`);
     setShowProductModal(false);
-  };(`Adicionado à sacola!`);
-    setSelectedProduct(null); 
-    setSelectedSizes({});
   };
 
   const handleFinalize = async () => {
