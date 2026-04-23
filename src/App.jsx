@@ -1012,7 +1012,7 @@ const AdminConfig = ({ config, setConfig, showToast }) => {
 // ==========================================
 // 4. APLICATIVO PRINCIPAL (ROOT COMPONENT)
 // ==========================================
-export default function App() {
+function App() {
   // ======= PRODUTOS: agora vivem no Supabase =======
   const [productsRaw, setProductsRaw] = useState(DEFAULT_PRODUCTS);
   const productsRef = useRef(DEFAULT_PRODUCTS);
@@ -1948,3 +1948,5 @@ export default function App() {
 }
 
 
+
+export default App;
