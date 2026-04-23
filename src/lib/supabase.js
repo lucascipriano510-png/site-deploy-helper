@@ -28,6 +28,7 @@ export async function upsertProduct(product) {
     sales: Number(product.sales || 0),
     sizes: Array.isArray(product.sizes) ? product.sizes : [],
     featured: !!product.featured,
+    collection_name: product.collection_name || null,
     updated_at: new Date().toISOString(),
   };
   const { data, error } = await supabase

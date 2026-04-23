@@ -400,7 +400,7 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
       name: fd.get('name'),
       price: parseFloat(fd.get('price')),
       category: fd.get('category').toUpperCase(),
-      collection_name: fd.get('collection_name')?.toUpperCase(),
+      collection_name: fd.get('collection_name') || null,
       image: previewImage || editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400',
       stock: computedStock, 
       sales: editMode === 'new' ? 0 : editMode.sales,
@@ -648,8 +648,17 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
             </div>
             <div className="col-span-2 space-y-1">
                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Categoria</label>
-              <input name="category" defaultValue={editMode?.category} placeholder="Categoria (ex: VESTUÁRIO)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
-          <input name="collection_name" defaultValue={editMode?.collection_name} placeholder="Coleção (ex: VERÃO 2024)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />            </div>
+	              <input name="category" defaultValue={editMode?.category} placeholder="Categoria (ex: VESTUÁRIO)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	            </div>
+	            <div className="col-span-2 space-y-1">
+	               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Vincular à Coleção (Opcional)</label>
+	               <select name="collection_name" defaultValue={editMode?.collection_name || ""} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase appearance-none cursor-pointer focus:border-emerald-500/50">
+	                 <option value="">Nenhuma Coleção</option>
+	                 {availableCollections.map(c => (
+	                   <option key={c} value={c}>{c}</option>
+	                 ))}
+	               </select>
+	            </div>
             <div className="col-span-2 bg-zinc-950 p-4 rounded-[20px] border border-white/5 space-y-3 mt-2">
                <label className="text-[9px] font-black text-emerald-500 uppercase flex items-center gap-1"><Layers size={12}/> Grade de Tamanhos</label>
                {formSizes.map((item, idx) => (
@@ -942,8 +951,11 @@ const AdminBanners = ({ banners, setBanners, showToast }) => {
           </div>
           <input name="title" defaultValue={editBannerMode?.title} placeholder="Título" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" required />
           <input name="subtitle" defaultValue={editBannerMode?.subtitle} placeholder="Subtítulo" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" />
-          <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
-          <input name="collection_name" defaultValue={editBannerMode?.collection_name} placeholder="Coleção (Opcional)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />
+	          <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	          <div className="space-y-1">
+	            <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Nome da Coleção (Ex: Lacoste)</label>
+	            <input name="collection_name" defaultValue={editBannerMode?.collection_name} placeholder="Digite o nome da coleção..." className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />
+	          </div>
           <label className="flex items-center gap-3 bg-zinc-950 p-4 rounded-2xl border border-white/5"><input type="checkbox" name="active" defaultChecked={editBannerMode === 'new' ? true : editBannerMode?.active} className="w-5 h-5 accent-emerald-500" /><span className="text-[11px] font-black uppercase text-white">Ativo no site</span></label>
           <button type="submit" disabled={isUploadingBanner} className="w-full py-4 bg-emerald-500 text-zinc-950 rounded-[20px] font-black uppercase text-[10px] tracking-widest">{isUploadingBanner ? 'Salvando...' : 'Confirmar'}</button>
         </form>
@@ -1318,6 +1330,11 @@ function App() {
   // config agora vive no Supabase; nada pra persistir localmente
 
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
+  const availableCollections = useMemo(() => {
+    const set = new Set();
+    (banners || []).forEach(b => { if (b.collection_name) set.add(b.collection_name); });
+    return Array.from(set).sort();
+  }, [banners]);
   useEffect(() => {
     if (isAdmin || activeBanners.length <= 1) return;
     const timer = setInterval(() => { setCurrentBannerSlide((prev) => (prev + 1) % activeBanners.length); }, 5000);
