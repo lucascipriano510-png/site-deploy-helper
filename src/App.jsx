@@ -717,8 +717,10 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           })),
         };
         await confirmOrderSale(orderForSale, products);
-        // Atualiza local: marca como concluído e dá baixa local pra refletir na hora
-        setLeads(leads.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
+        // Atualiza local: marca como concluído. O `value` é preservado pelo spread,
+        // então o totalRevenue do Dashboard é recalculado em tempo real (useMemo).
+        // A persistência no Supabase já foi feita por confirmOrderSale acima.
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
         // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
         const updatedProducts = products.map(p => {
           const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
@@ -736,12 +738,12 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         showToast('Venda confirmada e estoque atualizado!');
       } else if (newStatus === 'CANCELADO') {
         await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
-        setLeads(leads.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
         // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
         await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
-        setLeads(leads.map(l => l.id === id ? { ...l, status: newStatus } : l));
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
         showToast('Status atualizado.');
       }
     } catch (err) {
@@ -1261,9 +1263,18 @@ function App() {
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
   useEffect(() => {
     if (isAdmin || activeBanners.length <= 1) return;
-    const timer = setInterval(() => { setCurrentBannerSlide((prev) => (prev + 1) % activeBanners.length); }, 5000); 
+    const timer = setInterval(() => { setCurrentBannerSlide((prev) => (prev + 1) % activeBanners.length); }, 5000);
     return () => clearInterval(timer);
-  }, [activeBanners.length, isAdmin]);
+    // currentBannerSlide aqui força o timer a reiniciar quando o usuário navega manualmente
+  }, [activeBanners.length, isAdmin, currentBannerSlide]);
+
+  const goToBannerSlide = (idx) => {
+    if (!activeBanners.length) return;
+    const total = activeBanners.length;
+    setCurrentBannerSlide(((idx % total) + total) % total);
+  };
+  const nextBannerSlide = () => goToBannerSlide(currentBannerSlide + 1);
+  const prevBannerSlide = () => goToBannerSlide(currentBannerSlide - 1);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -1548,6 +1559,41 @@ function App() {
               </div>
             ))}
           </div>
+
+          {activeBanners.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={prevBannerSlide}
+                aria-label="Banner anterior"
+                data-testid="banner-prev"
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-zinc-950/50 backdrop-blur-sm border border-white/10 text-white flex items-center justify-center active:scale-90 transition-transform shadow-lg"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                type="button"
+                onClick={nextBannerSlide}
+                aria-label="Próximo banner"
+                data-testid="banner-next"
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-zinc-950/50 backdrop-blur-sm border border-white/10 text-white flex items-center justify-center active:scale-90 transition-transform shadow-lg"
+              >
+                <ChevronRight size={20} />
+              </button>
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+                {activeBanners.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => goToBannerSlide(idx)}
+                    aria-label={`Ir para banner ${idx + 1}`}
+                    data-testid={`banner-dot-${idx}`}
+                    className={`h-2 rounded-full transition-all ${idx === currentBannerSlide ? 'w-6 bg-emerald-500' : 'w-2 bg-white/40'}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </section>
       )}
 
