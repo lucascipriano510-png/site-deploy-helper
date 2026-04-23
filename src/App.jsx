@@ -856,9 +856,9 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
                 </div>
               ))}
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} disabled={isAnyBusy(lead.id)} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white disabled:opacity-50 disabled:cursor-not-allowed">{isBusy(lead.id, 'EM ATENDIMENTO') ? '...' : 'Atender'}</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} disabled={isAnyBusy(lead.id)} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed">{isBusy(lead.id, 'CONCLUÍDO') ? 'Concluindo...' : 'Concluir'}</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} disabled={isAnyBusy(lead.id)} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500 disabled:opacity-50 disabled:cursor-not-allowed">{isBusy(lead.id, 'CANCELADO') ? 'Cancelando...' : 'Cancelar'}</button>
                 <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>
             </div>
