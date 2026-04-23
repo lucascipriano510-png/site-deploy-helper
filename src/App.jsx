@@ -13,7 +13,7 @@ import {
   Flame, ShieldCheck, Award, CreditCard, Lock, Megaphone, ImagePlus,
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
-import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
+import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fetchBanners, upsertBanner, deleteBanner as deleteBannerRemote } from './lib/supabase';
 import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
@@ -1124,9 +1124,46 @@ function App() {
   };
   const products = productsRaw;
 
-  const [banners, setBanners] = useState(() => {
-    try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
-  });
+  const [banners, setBannersRaw] = useState(DEFAULT_BANNERS);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const remote = await fetchBanners();
+        if (alive && Array.isArray(remote) && remote.length > 0) {
+          // Normaliza button_text -> buttonText para o UI
+          const normalized = remote.map(b => ({
+            ...b,
+            buttonText: b.button_text || b.buttonText || 'VER PEÇAS'
+          }));
+          setBannersRaw(normalized);
+        }
+      } catch (e) { console.warn('[banners] fetch falhou:', e?.message); }
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  const setBanners = (updater) => {
+    setBannersRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        const prevIds = new Set((prev || []).map(b => b.id));
+        const nextIds = new Set((next || []).map(b => b.id));
+        // upserts
+        (next || []).forEach(b => {
+          const old = (prev || []).find(o => o.id === b.id);
+          if (!old || JSON.stringify(old) !== JSON.stringify(b)) {
+            upsertBanner(b).catch(err => console.warn('[banners] upsert falhou:', err?.message));
+          }
+        });
+        // deletes
+        (prev || []).forEach(b => { if (!nextIds.has(b.id)) deleteBannerRemote(b.id).catch(err => console.warn('[banners] delete falhou:', err?.message)); });
+      } catch (e) { console.warn('[banners] sync falhou:', e?.message); }
+      return next;
+    });
+  };
   const [config, setConfigState] = useState(SITE_DEFAULT_CONFIG);
   // Carrega config do Supabase + polling de 10s pra propagar mudanças pra todos
   useEffect(() => {
@@ -1325,8 +1362,8 @@ function App() {
     }
   }, []);
 
-  // products + leads vivem no Supabase. banners e config seguem no localStorage.
-  useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
+  // products + leads + banners + config vivem no Supabase.
+  // localStorage removido para evitar divergência entre dispositivos.
   // config agora vive no Supabase; nada pra persistir localmente
 
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
