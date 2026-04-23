@@ -366,24 +366,10 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
       setIsUploadingImage(true);
       const reader = new FileReader();
       reader.onloadend = () => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_SIZE = 400; 
-          let width = img.width;
-          let height = img.height;
-          if (width > height) {
-            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-          } else {
-            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-          }
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          setPreviewImage(canvas.toDataURL('image/jpeg', 0.6)); 
-          setIsUploadingImage(false);
-        };
-        img.src = reader.result;
+        // Removemos rigorosamente qualquer compressão ou canvas.
+        // Usamos o Base64 original do arquivo em alta resolução.
+        setPreviewImage(reader.result);
+        setIsUploadingImage(false);
       };
       reader.readAsDataURL(file);
     }
@@ -893,22 +879,9 @@ const AdminBanners = ({ banners, setBanners, showToast }) => {
       setIsUploadingBanner(true);
       const reader = new FileReader();
       reader.onloadend = () => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const TW = 800; const TH = 450;
-          canvas.width = TW; canvas.height = TH;
-          const ctx = canvas.getContext('2d');
-          const aspect = img.width / img.height;
-          const tAspect = TW / TH;
-          let rw, rh, xs, ys;
-          if (aspect < tAspect) { rw = img.width; rh = img.width / tAspect; xs = 0; ys = (img.height - rh) / 2; }
-          else { rh = img.height; rw = img.height * tAspect; xs = (img.width - rw) / 2; ys = 0; }
-          ctx.drawImage(img, xs, ys, rw, rh, 0, 0, TW, TH);
-          setPreviewBannerImage(canvas.toDataURL('image/jpeg', 0.7)); 
-          setIsUploadingBanner(false);
-        };
-        img.src = reader.result;
+        // Removemos o crop/canvas para preservar a resolução original do iPhone.
+        setPreviewBannerImage(reader.result);
+        setIsUploadingBanner(false);
       };
       reader.readAsDataURL(file);
     }
@@ -1785,7 +1758,7 @@ function App() {
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
                    <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-	                     <img src={product.image} style={{ objectFit: 'cover', width: '100%', aspectRatio: '3/4', imageRendering: 'high-quality' }} className={`transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+	                     <img src={product.image} style={{ objectFit: 'cover', width: '100%', aspectRatio: '3/4', imageRendering: 'high-quality', WebkitOptimizeContrast: 'optimize-contrast' }} className={`transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
                      
                      {isOutOfStock && (
                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
@@ -1890,7 +1863,7 @@ function App() {
             <div className="relative w-full aspect-[3/4] bg-black overflow-hidden group">
               <img 
                 src={selectedProduct.image} 
-                style={{ objectFit: 'contain', width: '100%', maxHeight: '70vh', imageRendering: 'high-quality' }} 
+                style={{ objectFit: 'contain', width: '100%', maxHeight: '70vh', imageRendering: 'high-quality', WebkitOptimizeContrast: 'optimize-contrast' }} 
                 className="w-full h-full transition-transform duration-500" 
                 alt={selectedProduct.name} 
               />
