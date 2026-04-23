@@ -218,7 +218,7 @@ const AdminDashboard = ({ leads, products }) => {
   );
 };
 
-const AdminInventory = ({ products, setProducts, showToast }) => {
+const AdminInventory = ({ products, setProducts, showToast, availableCollections }) => {
   const [editMode, setEditMode] = useState(null); 
   const [invSearch, setInvSearch] = useState('');
   const [previewImage, setPreviewImage] = useState('');
@@ -1565,7 +1565,7 @@ function App() {
         <AdminHeader handleLogout={handleLogout} />
         <main className="max-w-md mx-auto">
           {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
-          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} />}
+          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} />}
           {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
           {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} />}
           {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
