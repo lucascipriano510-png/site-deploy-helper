@@ -14,7 +14,7 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip as ReTooltip, Cell } from 'recharts';
@@ -739,7 +739,7 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         setProducts(updatedProducts);
         showToast('Venda confirmada e estoque atualizado!');
       } else if (newStatus === 'CANCELADO') {
-        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
+        await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
