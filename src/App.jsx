@@ -705,85 +705,113 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
-  // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
+  const [isProcessing, setIsProcessing] = useState(false);
   const [leadsFilter, setLeadsFilter] = useState('ativos');
-  // Handler explícito de "CONCLUIR" no CRM.
-  // Recebe o ID e o valor do pedido; o valor é tratado como Number (parseFloat)
-  // para garantir que a soma na "Receita Concluída" do Dashboard nunca concatene strings.
-  // Toda a lógica pesada (Supabase + estoque + estado local) vive em updateLeadStatus.
+
+  // Handler de "CONCLUIR" (Fluxo Rígido)
   const handleCompleteOrder = async (id, rawValue) => {
-    const numericValue = parseFloat(rawValue);
-    if (Number.isNaN(numericValue)) {
-      console.warn('[handleCompleteOrder] valor inválido para o pedido', id, rawValue);
-      showToast('Erro: Valor do pedido inválido.', 'error');
-      return;
-    }
-    
-    // Feedback imediato
-    showToast('Processando conclusão...');
+    setIsProcessing(true); // 1. INÍCIO
+    console.log('[CRM_ACTION] Concluir', { id, action: 'CONCLUÍDO', valor: rawValue }); // 2. DEBUG
     
     try {
-      await updateLeadStatus(id, 'CONCLUÍDO');
-      // O status 'CONCLUÍDO' fará o pedido sair da lista 'ativos' localmente
-      // e entrar na conta da 'Receita Concluída' no Dashboard automaticamente
-      // via o estado centralizado 'leads'.
+      const leadToUpdate = leads.find(l => l.id === id);
+      if (!leadToUpdate) throw new Error('Pedido não localizado');
+
+      const orderForSale = {
+        id: leadToUpdate._raw?.id || leadToUpdate.id,
+        items: (leadToUpdate.items || []).map(i => ({
+          id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
+        })),
+      };
+
+      // 3. TRY: Await da função do banco
+      const { error } = await confirmOrderSale(orderForSale, products)
+        .then(() => ({ error: null }))
+        .catch(err => ({ error: err }));
+      
+      if (error) throw new Error(error.message); // Validação imediata
+
+      // 4. SUCESSO: Atualização do estado local SÓ APÓS o banco
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
+      
+      const updatedProducts = products.map(p => {
+        const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
+        if (itemsForP.length === 0) return p;
+        const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
+        const newSizes = (p.sizes || []).map(s => {
+          const sName = typeof s === 'string' ? s : (s.size || 'U');
+          const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+          const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
+          return { size: sName, stock: Math.max(0, sStock - dec) };
+        });
+        return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
+      });
+      setProducts(updatedProducts);
+      showToast('Venda concluída com sucesso!');
+      setExpandedLead(null);
     } catch (err) {
-      console.error('[handleCompleteOrder] erro:', err);
+      console.log('[CRM_ERROR]', err); // 5. CATCH
       showToast('Erro ao concluir pedido.', 'error');
+    } finally {
+      setIsProcessing(false); // 6. FINALLY
     }
   };
 
-  const updateLeadStatus = async (id, newStatus) => {
-    const leadToUpdate = leads.find(l => l.id === id);
-    if (!leadToUpdate) return;
-    const oldStatus = leadToUpdate.status || 'NOVO';
-    
+  // Handler de "CANCELAR" (Fluxo Rígido)
+  const handleCancelOrder = async (id) => {
+    setIsProcessing(true); // 1. INÍCIO
+    console.log('[CRM_ACTION] Cancelar', { id, action: 'CANCELADO' }); // 2. DEBUG
+
     try {
-      if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
-        const orderForSale = {
-          id: leadToUpdate._raw?.id || leadToUpdate.id,
-          items: (leadToUpdate.items || []).map(i => ({
-            id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
-          })),
-        };
-        
-        // 1. Persiste no Supabase (Estoque + Status)
-        await confirmOrderSale(orderForSale, products);
-        
-        // 2. Atualiza estado local de leads (remove de ativos, adiciona na receita)
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
-        
-        // 3. Atualiza produtos locais (baixa imediata de estoque)
-        const updatedProducts = products.map(p => {
-          const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
-          if (itemsForP.length === 0) return p;
-          const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
-          const newSizes = (p.sizes || []).map(s => {
-            const sName = typeof s === 'string' ? s : (s.size || 'U');
-            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-            const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
-            return { size: sName, stock: Math.max(0, sStock - dec) };
-          });
-          return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
-        });
-        setProducts(updatedProducts);
-        showToast('Venda concluída com sucesso!');
-      } else if (newStatus === 'CANCELADO') {
-        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
-        showToast('Pedido cancelado.');
-      } else {
-        await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
-        showToast('Status atualizado.');
-      }
+      const leadToUpdate = leads.find(l => l.id === id);
+      if (!leadToUpdate) throw new Error('Pedido não localizado');
+
+      // 3. TRY: Await da função do banco
+      const { error } = await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id)
+        .then(() => ({ error: null }))
+        .catch(err => ({ error: err }));
+      
+      if (error) throw new Error(error.message); // Validação imediata
+
+      // 4. SUCESSO: Atualização do estado local
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
+      showToast('Pedido cancelado.');
+      setExpandedLead(null);
     } catch (err) {
-      console.error('[updateLeadStatus] erro crítico:', err);
-      showToast('Falha na comunicação com servidor.', 'error');
-      throw err; // Repassa para o handler superior
+      console.log('[CRM_ERROR]', err); // 5. CATCH
+      showToast('Erro ao cancelar pedido.', 'error');
+    } finally {
+      setIsProcessing(false); // 6. FINALLY
     }
-    setExpandedLead(null);
   };
+
+  // Handler de "ATENDER" (Fluxo Rígido)
+  const handleStartService = async (id) => {
+    setIsProcessing(true); // 1. INÍCIO
+    console.log('[CRM_ACTION] Atender', { id, action: 'EM ATENDIMENTO' }); // 2. DEBUG
+
+    try {
+      const leadToUpdate = leads.find(l => l.id === id);
+      if (!leadToUpdate) throw new Error('Pedido não localizado');
+
+      // 3. TRY: Await da função do banco
+      const { error } = await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, 'EM ATENDIMENTO')
+        .then(() => ({ error: null }))
+        .catch(err => ({ error: err }));
+      
+      if (error) throw new Error(error.message); // Validação imediata
+
+      // 4. SUCESSO: Atualização do estado local
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'EM ATENDIMENTO' } : l));
+      showToast('Status atualizado.');
+    } catch (err) {
+      console.log('[CRM_ERROR]', err); // 5. CATCH
+      showToast('Erro ao atualizar status.', 'error');
+    } finally {
+      setIsProcessing(false); // 6. FINALLY
+    }
+  };
+
   const statusColors = { 'NOVO': 'text-blue-500', 'EM ATENDIMENTO': 'text-amber-500', 'CONCLUÍDO': 'text-emerald-500', 'CANCELADO': 'text-red-500' };
 
   const exportCSV = () => {
@@ -888,20 +916,33 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
                 </div>
               ))}
               <div className="grid grid-cols-2 gap-3 pt-4">
-                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-[10px] font-black uppercase text-white transition-all active:scale-95 flex items-center justify-center gap-2 border border-white/5">
-                  <Clock size={14}/> Atender
+                <button 
+                  disabled={isProcessing}
+                  onClick={() => handleStartService(lead.id)} 
+                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 border ${isProcessing ? 'bg-zinc-800 text-zinc-600 border-white/5' : 'bg-zinc-800 hover:bg-zinc-700 text-white border-white/5'}`}
+                >
+                  <Clock size={14} className={isProcessing ? 'animate-spin' : ''}/> Atender
                 </button>
                 <button 
+                  disabled={isProcessing}
                   onClick={() => handleCompleteOrder(lead.id, lead.value)} 
                   data-testid={`btn-complete-${lead.id}`} 
-                  className="py-4 bg-emerald-500 text-zinc-950 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)]"
+                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)] ${isProcessing ? 'bg-emerald-900 text-emerald-500 opacity-50' : 'bg-emerald-500 text-zinc-950'}`}
                 >
-                  <CheckCircle2 size={14}/> CONCLUIR
+                  <CheckCircle2 size={14} className={isProcessing ? 'animate-spin' : ''}/> CONCLUIR
                 </button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-4 bg-red-500/10 hover:bg-red-500/20 rounded-2xl text-[10px] font-black uppercase text-red-500 transition-all active:scale-95 border border-red-500/10">
-                  <XCircle size={14}/> Cancelar
+                <button 
+                  disabled={isProcessing}
+                  onClick={() => handleCancelOrder(lead.id)} 
+                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 border ${isProcessing ? 'bg-red-950 text-red-900 border-red-950' : 'bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/10'}`}
+                >
+                  <XCircle size={14} className={isProcessing ? 'animate-pulse' : ''}/> Cancelar
                 </button>
-                <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-4 bg-zinc-900 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 flex items-center justify-center gap-2">
+                <button 
+                  disabled={isProcessing}
+                  onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} 
+                  className="py-4 bg-zinc-900 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
                   <MessageCircle size={14} className="text-emerald-500"/> Chamar
                 </button>
               </div>
@@ -1730,7 +1771,7 @@ function App() {
                    {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
-                   <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
+                   <div className="w-full h-full aspect-[3/4] relative bg-zinc-900 overflow-hidden rounded-lg">
                      <img 
                        src={product.image} 
                        className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} 
@@ -1839,7 +1880,7 @@ function App() {
           <div className="relative bg-zinc-950 w-full max-w-lg rounded-[48px] overflow-hidden animate-slide-up border border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]">
             
             {/* Imagem de Alta Qualidade com Zoom Interno */}
-            <div className="relative w-full aspect-[4/5] bg-zinc-900 overflow-hidden group">
+            <div className="w-full h-full aspect-[4/5] relative bg-zinc-900 overflow-hidden rounded-lg group">
               <img 
                 src={selectedProduct.image} 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 cursor-zoom-in" 
