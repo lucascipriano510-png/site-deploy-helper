@@ -138,7 +138,7 @@ const AdminDashboard = ({ leads, products }) => {
     <div className="p-6 space-y-6 animate-in pb-24">
       <div className="bg-gradient-to-br from-emerald-900 to-zinc-950 p-6 rounded-[32px] border border-emerald-500/20 shadow-2xl relative overflow-hidden">
         <div className="absolute -right-4 -top-4 opacity-10"><DollarSign size={180}/></div>
-        <p className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2"><TrendingUp size={12}/> Receita Concluída</p>
+        <p className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2"><TrendingUp size={12}/> Vendas Totais / Receita</p>
         <h3 className="text-4xl font-black text-white italic relative z-10 tracking-tighter shadow-black drop-shadow-md">R$ {totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
         <div className="h-24 mt-6 relative z-10 -mx-2">
           <ResponsiveContainer width="100%" height="100%">
@@ -369,7 +369,7 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 400; 
+          const MAX_SIZE = 1200; // Aumentado para Alta Resolução
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -379,8 +379,11 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
           }
           canvas.width = width; canvas.height = height;
           const ctx = canvas.getContext('2d');
+          // Melhor qualidade de renderização no canvas
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
-          setPreviewImage(canvas.toDataURL('image/jpeg', 0.6)); 
+          setPreviewImage(canvas.toDataURL('image/jpeg', 0.85)); // Qualidade aumentada para 85%
           setIsUploadingImage(false);
         };
         img.src = reader.result;
@@ -712,30 +715,45 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
     const numericValue = parseFloat(rawValue);
     if (Number.isNaN(numericValue)) {
       console.warn('[handleCompleteOrder] valor inválido para o pedido', id, rawValue);
+      showToast('Erro: Valor do pedido inválido.', 'error');
+      return;
     }
-    await updateLeadStatus(id, 'CONCLUÍDO');
+    
+    // Feedback imediato
+    showToast('Processando conclusão...');
+    
+    try {
+      await updateLeadStatus(id, 'CONCLUÍDO');
+      // O status 'CONCLUÍDO' fará o pedido sair da lista 'ativos' localmente
+      // e entrar na conta da 'Receita Concluída' no Dashboard automaticamente
+      // via o estado centralizado 'leads'.
+    } catch (err) {
+      console.error('[handleCompleteOrder] erro:', err);
+      showToast('Erro ao concluir pedido.', 'error');
+    }
   };
 
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
     const oldStatus = leadToUpdate.status || 'NOVO';
+    
     try {
-      // Sistema 3.0: estoque só baixa quando admin confirma a venda (CONCLUÍDO)
       if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
-        // monta order no formato esperado por confirmOrderSale
         const orderForSale = {
           id: leadToUpdate._raw?.id || leadToUpdate.id,
           items: (leadToUpdate.items || []).map(i => ({
             id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
           })),
         };
+        
+        // 1. Persiste no Supabase (Estoque + Status)
         await confirmOrderSale(orderForSale, products);
-        // Atualiza local: marca como concluído. O `value` é preservado pelo spread,
-        // então o totalRevenue do Dashboard é recalculado em tempo real (useMemo).
-        // A persistência no Supabase já foi feita por confirmOrderSale acima.
+        
+        // 2. Atualiza estado local de leads (remove de ativos, adiciona na receita)
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
-        // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
+        
+        // 3. Atualiza produtos locais (baixa imediata de estoque)
         const updatedProducts = products.map(p => {
           const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
           if (itemsForP.length === 0) return p;
@@ -749,20 +767,20 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
         });
         setProducts(updatedProducts);
-        showToast('Venda confirmada e estoque atualizado!');
+        showToast('Venda concluída com sucesso!');
       } else if (newStatus === 'CANCELADO') {
         await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
-        // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
         await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
         showToast('Status atualizado.');
       }
     } catch (err) {
-      console.error('[orders] update status falhou:', err);
-      showToast('Erro ao atualizar pedido.', 'error');
+      console.error('[updateLeadStatus] erro crítico:', err);
+      showToast('Falha na comunicação com servidor.', 'error');
+      throw err; // Repassa para o handler superior
     }
     setExpandedLead(null);
   };
@@ -847,27 +865,45 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           {expandedLead === lead.id && (
             <div className="bg-zinc-950/50 p-6 border-t border-white/5 animate-slide-down space-y-4">
               {(lead.items || []).map((item, idx) => (
-                <div key={idx} className="flex gap-4 bg-zinc-900 p-4 rounded-2xl items-center border border-white/5">
-                  <div className="w-12 h-16 bg-zinc-950 rounded-lg overflow-hidden shrink-0 border border-white/10">
-                    <img src={item.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=100'} className="w-full h-full object-cover" alt="Thumb" />
+                <div key={idx} className="flex gap-4 bg-zinc-900 p-4 rounded-2xl items-center border border-white/5 shadow-inner">
+                  <div className="w-16 h-20 bg-zinc-950 rounded-xl overflow-hidden shrink-0 border border-white/10 shadow-2xl">
+                    <img src={item.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=200'} className="w-full h-full object-cover" alt="Thumb" />
                   </div>
-                  <div className="flex-1 flex flex-col gap-1 min-w-0">
+                  <div className="flex-1 flex flex-col gap-1.5 min-w-0">
                     <div className="flex justify-between items-start gap-2">
-                      <span className="text-[11px] font-black text-white uppercase truncate">{item.name}</span>
-                      <span className="text-emerald-500 font-black text-[10px] shrink-0">{item.quantity || item.qty}x</span>
+                      <span className="text-[12px] font-black text-white uppercase truncate tracking-tight">{item.name}</span>
+                      <span className="text-emerald-500 font-black text-[11px] shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">{item.quantity || item.qty}x</span>
                     </div>
-                    <div className="flex gap-2 items-center">
-                      <span className="text-[9px] font-bold text-zinc-500 uppercase bg-zinc-950 px-2 py-0.5 rounded border border-white/5">SKU: {item.sku || 'N/A'}</span>
-                      <span className="text-[9px] font-bold text-zinc-400 uppercase bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/10">TAM: {item.size || 'U'}</span>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <div className="flex items-center gap-1 bg-zinc-950 px-2.5 py-1 rounded-lg border border-white/5">
+                        <Barcode size={10} className="text-zinc-500"/>
+                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{item.sku || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/10">
+                        <Box size={10} className="text-emerald-500"/>
+                        <span className="text-[9px] font-black text-emerald-500 uppercase">TAM: {item.size || 'U'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
-                <button onClick={() => handleCompleteOrder(lead.id, lead.value)} data-testid={`btn-complete-${lead.id}`} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500 border border-emerald-500/20">Concluir</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
-                <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
+              <div className="grid grid-cols-2 gap-3 pt-4">
+                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-[10px] font-black uppercase text-white transition-all active:scale-95 flex items-center justify-center gap-2 border border-white/5">
+                  <Clock size={14}/> Atender
+                </button>
+                <button 
+                  onClick={() => handleCompleteOrder(lead.id, lead.value)} 
+                  data-testid={`btn-complete-${lead.id}`} 
+                  className="py-4 bg-emerald-500 text-zinc-950 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)]"
+                >
+                  <CheckCircle2 size={14}/> Concluir
+                </button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-4 bg-red-500/10 hover:bg-red-500/20 rounded-2xl text-[10px] font-black uppercase text-red-500 transition-all active:scale-95 border border-red-500/10">
+                  <XCircle size={14}/> Cancelar
+                </button>
+                <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-4 bg-zinc-900 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 flex items-center justify-center gap-2">
+                  <MessageCircle size={14} className="text-emerald-500"/> Chamar
+                </button>
               </div>
             </div>
           )}
@@ -1697,8 +1733,7 @@ function App() {
                    <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
                      <img 
                        src={product.image} 
-                       onClick={(e) => { if (!isOutOfStock) { e.stopPropagation(); setZoomImage(product.image); } }}
-                       className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100 cursor-zoom-in'}`} 
+                       className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} 
                        loading="lazy" 
                        alt={product.name} 
                      />
@@ -1798,49 +1833,110 @@ function App() {
       )}
 
       {selectedProduct && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
-          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] p-8 animate-slide-up border-t border-white/10 shadow-2xl pb-10">
-            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-            <div className="flex gap-6 mb-8">
-              <img src={selectedProduct.image} className="w-28 h-36 rounded-[20px] object-cover shadow-2xl border border-white/10" alt="Produto" />
-              <div className="flex flex-col justify-center flex-1">
-                <span className="text-[8px] font-black text-zinc-500 uppercase bg-zinc-900 px-2 py-1 rounded-md tracking-widest self-start">REF: {selectedProduct.sku}</span>
-                <h2 className="text-lg font-black text-white leading-tight uppercase mt-1">{selectedProduct.name}</h2>
-                <p className="text-2xl font-black text-emerald-500 mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
+          
+          <div className="relative bg-zinc-950 w-full max-w-lg rounded-[48px] overflow-hidden animate-slide-up border border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]">
+            
+            {/* Imagem de Alta Qualidade com Zoom Interno */}
+            <div className="relative w-full aspect-[4/5] bg-zinc-900 overflow-hidden group">
+              <img 
+                src={selectedProduct.image} 
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 cursor-zoom-in" 
+                alt="Detalhe do produto" 
+                onClick={() => setZoomImage(selectedProduct.image)}
+              />
+              <div className="absolute top-6 left-6 flex gap-2">
+                <span className="bg-black/60 backdrop-blur-md text-[9px] font-black text-white px-3 py-1.5 rounded-full border border-white/10 uppercase tracking-widest">REF: {selectedProduct.sku}</span>
+              </div>
+              <button 
+                onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} 
+                className="absolute top-6 right-6 z-10 p-3 bg-black/60 backdrop-blur-md text-white rounded-full border border-white/10 active:scale-90 transition-transform"
+              >
+                <X size={20}/>
+              </button>
+              
+              {/* Overlay Informativo */}
+              <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent">
+                 <h2 className="text-2xl font-black text-white leading-tight uppercase italic tracking-tighter">{selectedProduct.name}</h2>
+                 <div className="flex items-center gap-3 mt-2">
+                   <p className="text-3xl font-black text-emerald-500 tracking-tighter">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
+                   {selectedProduct.stock <= 3 && <span className="bg-amber-500 text-zinc-950 text-[9px] font-black px-2 py-1 rounded-md animate-pulse">ÚLTIMAS PEÇAS</span>}
+                 </div>
               </div>
             </div>
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
-              <div className="grid grid-cols-4 gap-2">
-                {(selectedProduct.sizes || []).map((s, idx) => {
-                  const sz = typeof s === 'string' ? s : s.size;
-                  const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
-                  const qty = selectedSizes[sz] || 0;
-                  if (qty > 0) {
+
+            {/* Conteúdo do Modal (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-8 pt-6 space-y-8 custom-scrollbar">
+              
+              {/* Seleção de Tamanhos */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Escolha seu Tamanho</p>
+                  <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1"><Info size={10}/> Guia de medidas</span>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {(selectedProduct.sizes || []).map((s, idx) => {
+                    const sz = typeof s === 'string' ? s : s.size;
+                    const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
+                    const qty = selectedSizes[sz] || 0;
+                    const isSelected = qty > 0;
+                    
                     return (
-                      <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
-                        <span className="text-xs font-black text-emerald-500">{sz}</span>
-                        <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
-                          <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
-                          <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
-                          <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
-                        </div>
-                      </div>
+                      <button 
+                        key={idx} 
+                        disabled={stock <= 0} 
+                        onClick={() => handleSizeSelect(sz, stock)} 
+                        className={`relative h-14 rounded-2xl border font-black text-sm transition-all flex flex-col items-center justify-center gap-0.5 ${
+                          isSelected 
+                            ? 'bg-emerald-500 border-emerald-500 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)]' 
+                            : stock > 0 
+                              ? 'bg-zinc-900 border-white/5 text-zinc-400 hover:border-white/20 active:scale-95' 
+                              : 'bg-zinc-950/50 border-white/5 text-zinc-700 opacity-40 cursor-not-allowed'
+                        }`}
+                      >
+                        <span className={isSelected ? 'text-zinc-950' : ''}>{sz}</span>
+                        {stock > 0 && stock <= 2 && !isSelected && <span className="text-[7px] text-amber-500 font-bold uppercase">Pouco</span>}
+                        {isSelected && (
+                          <div className="absolute -top-2 -right-2 w-5 h-5 bg-zinc-950 text-white rounded-full flex items-center justify-center text-[9px] border border-emerald-500">
+                            {qty}
+                          </div>
+                        )}
+                      </button>
                     );
-                  }
-                  return (
-                    <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
-                  );
-                })}
+                  })}
+                </div>
               </div>
-              <div className="pt-6 mt-4 border-t border-white/5">
-                <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
-                  {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
+
+              {/* Botão de Ação */}
+              <div className="pt-2">
+                <button 
+                  onClick={handleCommitToCart} 
+                  disabled={Object.keys(selectedSizes).length === 0} 
+                  className={`w-full py-6 rounded-[24px] font-black text-[12px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] ${
+                    Object.keys(selectedSizes).length === 0 
+                      ? 'bg-zinc-900 text-zinc-600 border border-white/5 cursor-not-allowed' 
+                      : 'bg-white text-zinc-950 hover:bg-emerald-500 transition-colors'
+                  }`}
+                >
+                  {Object.keys(selectedSizes).length === 0 
+                    ? 'Selecione uma variação' 
+                    : <>Adicionar à Sacola <ShoppingBag size={18}/></>}
                 </button>
               </div>
+
+              {/* Detalhes Adicionais */}
+              <div className="grid grid-cols-2 gap-4 opacity-50">
+                 <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-white/5">
+                    <Truck size={16} className="text-zinc-400"/>
+                    <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Envio Rápido</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Todo Brasil</span></div>
+                 </div>
+                 <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-white/5">
+                    <ShieldCheck size={16} className="text-zinc-400"/>
+                    <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Qualidade</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Premium</span></div>
+                 </div>
+              </div>
             </div>
-            <button onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} className="absolute top-6 right-6 text-zinc-600 bg-zinc-900 rounded-full p-2 touch-manipulation"><X size={18}/></button>
           </div>
         </div>
       )}
@@ -2044,6 +2140,25 @@ function App() {
           background-color: #09090b; 
           overflow-x: hidden;
           touch-action: manipulation; 
+          image-rendering: -webkit-optimize-contrast;
+        }
+
+        img {
+          image-rendering: auto;
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
+          transform: translateZ(0);
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.1);
+          border-radius: 10px;
         }
         
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
