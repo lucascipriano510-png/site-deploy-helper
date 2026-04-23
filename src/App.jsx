@@ -101,7 +101,7 @@ const AdminHeader = ({ handleLogout }) => (
 const AdminDashboard = ({ leads, products }) => {
   const validLeads = (leads || []).filter(l => l.status !== 'CANCELADO');
   const concludedLeads = (leads || []).filter(l => l.status === 'CONCLUÍDO');
-  const totalRevenue = concludedLeads.reduce((a, b) => a + (b.value || 0), 0);
+  const totalRevenue = concludedLeads.reduce((a, b) => a + parseFloat(b.value || 0), 0);
   const avgTicket = concludedLeads.length > 0 ? (totalRevenue / concludedLeads.length) : 0;
   
   // PROTEÇÃO CONTRA CRASH: (lead.items || []) blinda o sistema contra leads antigos sem items
@@ -369,7 +369,7 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 1200; // Aumentado para Alta Resolução
+          const MAX_SIZE = 2000; // Resolução Ultra para iPhone Standard
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -379,11 +379,11 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
           }
           canvas.width = width; canvas.height = height;
           const ctx = canvas.getContext('2d');
-          // Melhor qualidade de renderização no canvas
+          // Qualidade Máxima de Interpolação
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
-          setPreviewImage(canvas.toDataURL('image/jpeg', 0.85)); // Qualidade aumentada para 85%
+          setPreviewImage(canvas.toDataURL('image/jpeg', 0.95)); // Qualidade 95% para nitidez extrema
           setIsUploadingImage(false);
         };
         img.src = reader.result;
@@ -896,7 +896,7 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
                   data-testid={`btn-complete-${lead.id}`} 
                   className="py-4 bg-emerald-500 text-zinc-950 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)]"
                 >
-                  <CheckCircle2 size={14}/> Concluir
+                  <CheckCircle2 size={14}/> CONCLUIR
                 </button>
                 <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-4 bg-red-500/10 hover:bg-red-500/20 rounded-2xl text-[10px] font-black uppercase text-red-500 transition-all active:scale-95 border border-red-500/10">
                   <XCircle size={14}/> Cancelar
@@ -1867,13 +1867,13 @@ function App() {
             </div>
 
             {/* Conteúdo do Modal (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-8 pt-6 space-y-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-8 pt-6 pb-32 space-y-8 custom-scrollbar">
               
               {/* Seleção de Tamanhos */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Escolha seu Tamanho</p>
-                  <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1"><Info size={10}/> Guia de medidas</span>
+                  <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Escolha seu Tamanho</p>
+                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1"><Info size={12}/> Guia de medidas</span>
                 </div>
                 <div className="grid grid-cols-4 gap-3">
                   {(selectedProduct.sizes || []).map((s, idx) => {
@@ -1887,18 +1887,18 @@ function App() {
                         key={idx} 
                         disabled={stock <= 0} 
                         onClick={() => handleSizeSelect(sz, stock)} 
-                        className={`relative h-14 rounded-2xl border font-black text-sm transition-all flex flex-col items-center justify-center gap-0.5 ${
+                        className={`relative h-16 rounded-[20px] border font-black text-sm transition-all flex flex-col items-center justify-center gap-1 ${
                           isSelected 
-                            ? 'bg-emerald-500 border-emerald-500 text-zinc-950 shadow-[0_0_20px_rgba(16,185,129,0.3)]' 
+                            ? 'bg-emerald-500 border-emerald-500 text-zinc-950 shadow-[0_0_25px_rgba(16,185,129,0.3)]' 
                             : stock > 0 
                               ? 'bg-zinc-900 border-white/5 text-zinc-400 hover:border-white/20 active:scale-95' 
                               : 'bg-zinc-950/50 border-white/5 text-zinc-700 opacity-40 cursor-not-allowed'
                         }`}
                       >
                         <span className={isSelected ? 'text-zinc-950' : ''}>{sz}</span>
-                        {stock > 0 && stock <= 2 && !isSelected && <span className="text-[7px] text-amber-500 font-bold uppercase">Pouco</span>}
+                        {stock > 0 && stock <= 2 && !isSelected && <span className="text-[8px] text-amber-500 font-bold uppercase">Pouco</span>}
                         {isSelected && (
-                          <div className="absolute -top-2 -right-2 w-5 h-5 bg-zinc-950 text-white rounded-full flex items-center justify-center text-[9px] border border-emerald-500">
+                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-zinc-950 text-white rounded-full flex items-center justify-center text-[10px] border-2 border-emerald-500 font-black">
                             {qty}
                           </div>
                         )}
@@ -1908,25 +1908,8 @@ function App() {
                 </div>
               </div>
 
-              {/* Botão de Ação */}
-              <div className="pt-2">
-                <button 
-                  onClick={handleCommitToCart} 
-                  disabled={Object.keys(selectedSizes).length === 0} 
-                  className={`w-full py-6 rounded-[24px] font-black text-[12px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] ${
-                    Object.keys(selectedSizes).length === 0 
-                      ? 'bg-zinc-900 text-zinc-600 border border-white/5 cursor-not-allowed' 
-                      : 'bg-white text-zinc-950 hover:bg-emerald-500 transition-colors'
-                  }`}
-                >
-                  {Object.keys(selectedSizes).length === 0 
-                    ? 'Selecione uma variação' 
-                    : <>Adicionar à Sacola <ShoppingBag size={18}/></>}
-                </button>
-              </div>
-
               {/* Detalhes Adicionais */}
-              <div className="grid grid-cols-2 gap-4 opacity-50">
+              <div className="grid grid-cols-2 gap-4 opacity-50 pb-4">
                  <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-white/5">
                     <Truck size={16} className="text-zinc-400"/>
                     <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Envio Rápido</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Todo Brasil</span></div>
@@ -1936,6 +1919,23 @@ function App() {
                     <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Qualidade</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Premium</span></div>
                  </div>
               </div>
+            </div>
+
+            {/* Botão de Ação Fixo no Rodapé do Modal */}
+            <div className="absolute bottom-0 inset-x-0 p-8 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent pt-12">
+              <button 
+                onClick={handleCommitToCart} 
+                disabled={Object.keys(selectedSizes).length === 0} 
+                className={`w-full py-6 rounded-[24px] font-black text-[13px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(0,0,0,0.5)] active:scale-[0.98] ${
+                  Object.keys(selectedSizes).length === 0 
+                    ? 'bg-zinc-900 text-zinc-600 border border-white/5 cursor-not-allowed' 
+                    : 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400'
+                }`}
+              >
+                {Object.keys(selectedSizes).length === 0 
+                  ? 'Escolha seu Tamanho' 
+                  : <>ADICIONAR AO CARRINHO <ShoppingBag size={20}/></>}
+              </button>
             </div>
           </div>
         </div>
@@ -2141,15 +2141,26 @@ function App() {
           overflow-x: hidden;
           touch-action: manipulation; 
           image-rendering: -webkit-optimize-contrast;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
         }
 
         img {
-          image-rendering: auto;
+          image-rendering: -webkit-optimize-contrast;
+          image-rendering: high-quality;
+          image-rendering: crisp-edges;
           -webkit-backface-visibility: hidden;
           backface-visibility: hidden;
           transform: translateZ(0);
+          object-fit: cover;
+          display: block;
+          max-width: 100%;
         }
         
+        .premium-shadow {
+          shadow-[0_20px_50px_rgba(0,0,0,0.5)];
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
