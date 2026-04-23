@@ -1299,6 +1299,7 @@ function App() {
   const [zoomImage, setZoomImage] = useState(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [activeSize, setActiveSize] = useState(null);
+  const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
   const lastTapRef = useRef(0);
   useEffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
