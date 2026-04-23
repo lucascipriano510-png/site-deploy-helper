@@ -2039,70 +2039,79 @@ function App() {
         </div>
       )}
 
-      {showMyOrders && (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="modal-my-orders">
-          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-5 shadow-2xl border border-white/10 animate-in relative overflow-hidden max-h-[90vh] flex flex-col">
-            <button onClick={() => { setShowMyOrders(false); setMyOrdersResults(null); setMyOrdersPhone(''); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation z-10" data-testid="btn-close-my-orders"><X size={16}/></button>
-            <div className="text-center space-y-2 shrink-0">
-              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20"><ClipboardList size={28}/></div>
-              <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Meus Pedidos</h3>
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Digite seu WhatsApp para consultar</p>
-            </div>
+	      {showMyOrders && (
+	        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="modal-my-orders">
+	          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-5 shadow-2xl border border-white/10 animate-in relative overflow-hidden max-h-[90vh] flex flex-col">
+	            <button onClick={() => { setShowMyOrders(false); setMyOrdersResults(null); setMyOrdersPhone(''); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation z-10" data-testid="btn-close-my-orders"><X size={16}/></button>
+	            <div className="text-center space-y-2 shrink-0">
+	              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20"><ClipboardList size={28}/></div>
+	              <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Meus Pedidos</h3>
+	              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Digite seu WhatsApp para consultar</p>
+	            </div>
 
-            <div className="flex gap-2 shrink-0">
-              <input
-                placeholder="Ex: 34999999999"
-                type="tel"
-                className="flex-1 p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/30 client-input"
-                value={myOrdersPhone}
-                onChange={(e) => setMyOrdersPhone(e.target.value.replace(/\D/g, ''))}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMyOrders(); }}
-                data-testid="input-my-orders-phone"
-              />
-              <button onClick={handleSearchMyOrders} disabled={myOrdersLoading} className="px-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 disabled:opacity-50" data-testid="btn-search-my-orders">
-                {myOrdersLoading ? '...' : 'Buscar'}
-              </button>
-            </div>
+	            <div className="flex gap-2 shrink-0">
+	              <input
+	                placeholder="Ex: 34999999999"
+	                type="tel"
+	                className="flex-1 p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/30 client-input"
+	                value={myOrdersPhone}
+	                onChange={(e) => setMyOrdersPhone(e.target.value.replace(/\D/g, ''))}
+	                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMyOrders(); }}
+	                data-testid="input-my-orders-phone"
+	              />
+	              <button onClick={handleSearchMyOrders} disabled={myOrdersLoading} className="px-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 disabled:opacity-50" data-testid="btn-search-my-orders">
+	                {myOrdersLoading ? '...' : 'Buscar'}
+	              </button>
+	            </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 -mx-2 px-2">
-              {myOrdersResults === null ? (
-                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Informe seu número acima</div>
-              ) : myOrdersResults.length === 0 ? (
-                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Nenhum pedido encontrado para este número</div>
-              ) : (
-                myOrdersResults.map((row) => {
-                  const its = typeof row.items === 'string' ? (() => { try { return JSON.parse(row.items); } catch { return []; } })() : (row.items || []);
-                  const st = String(row.status || 'NOVO').toUpperCase();
-                  const stMap = { 'CONFIRMED': 'CONCLUÍDO', 'CONCLUIDO': 'CONCLUÍDO', 'CANCELLED': 'CANCELADO' };
-                  const status = stMap[st] || st;
-                  const color = status === 'CONCLUÍDO' ? 'text-emerald-500 bg-emerald-500/10' : status === 'CANCELADO' ? 'text-red-500 bg-red-500/10' : status === 'EM ATENDIMENTO' ? 'text-amber-500 bg-amber-500/10' : 'text-blue-500 bg-blue-500/10';
-                  return (
-                    <div key={row.id} className="bg-zinc-900 rounded-2xl p-4 border border-white/5" data-testid={`my-order-${row.order_number}`}>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-black uppercase text-white">#{row.order_number}</span>
-                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${color}`}>{status}</span>
-                      </div>
-                      <div className="text-[9px] text-zinc-500 font-bold uppercase mb-2">{row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : ''}</div>
-                      <div className="space-y-1">
-                        {(its || []).map((it, i) => (
-                          <div key={i} className="text-[10px] text-zinc-300 font-bold flex justify-between">
-                            <span className="truncate pr-2">{it.qty || 1}x {it.name} <span className="text-emerald-500">({it.size || 'U'})</span></span>
-                            <span className="text-zinc-500 shrink-0">R$ {Number(it.price || 0).toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
-                        <span className="text-[9px] text-zinc-500 font-black uppercase">Total</span>
-                        <span className="text-[13px] font-black text-emerald-500">R$ {Number(row.value || 0).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+	            <div className="flex-1 overflow-y-auto space-y-3 -mx-2 px-2">
+	              {myOrdersResults === null ? (
+	                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Informe seu número acima</div>
+	              ) : myOrdersResults.length === 0 ? (
+	                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Nenhum pedido encontrado para este número</div>
+	              ) : (
+	                myOrdersResults.map((row) => {
+	                  const its = typeof row.items === 'string' ? (() => { try { return JSON.parse(row.items); } catch { return []; } })() : (row.items || []);
+	                  const st = String(row.status || 'NOVO').toUpperCase();
+	                  const stMap = { 'CONFIRMED': 'CONCLUÍDO', 'CONCLUIDO': 'CONCLUÍDO', 'CANCELLED': 'CANCELADO' };
+	                  const status = stMap[st] || st;
+	                  const color = status === 'CONCLUÍDO' ? 'text-emerald-500 bg-emerald-500/10' : status === 'CANCELADO' ? 'text-red-500 bg-red-500/10' : status === 'EM ATENDIMENTO' ? 'text-amber-500 bg-amber-500/10' : 'text-blue-500 bg-blue-500/10';
+	                  return (
+	                    <div key={row.id} className="bg-zinc-900 rounded-2xl p-4 border border-white/5" data-testid={`my-order-${row.order_number}`}>
+	                      <div className="flex justify-between items-center mb-2">
+	                        <span className="text-[10px] font-black uppercase text-white">#{row.order_number}</span>
+	                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${color}`}>{status}</span>
+	                      </div>
+	                      <div className="text-[9px] text-zinc-500 font-bold uppercase mb-2">{row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : ''}</div>
+	                      <div className="space-y-1">
+	                        {(its || []).map((it, i) => (
+	                          <div key={i} className="text-[10px] text-zinc-300 font-bold flex justify-between">
+	                            <span className="truncate pr-2">{it.qty || 1}x {it.name} <span className="text-emerald-500">({it.size || 'U'})</span></span>
+	                            <span className="text-zinc-500 shrink-0">R$ {Number(it.price || 0).toFixed(2)}</span>
+	                          </div>
+	                        ))}
+	                      </div>
+	                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
+	                        <span className="text-[9px] text-zinc-500 font-black uppercase">Total</span>
+	                        <span className="text-[13px] font-black text-emerald-500">R$ {Number(row.value || 0).toFixed(2)}</span>
+	                      </div>
+	                    </div>
+	                  );
+	                })
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      )}
+
+	      {zoomImage && (
+	        <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center animate-in overflow-hidden">
+	          <button onClick={() => setZoomImage(null)} className="absolute top-8 right-8 z-50 p-4 bg-white/10 text-white rounded-full backdrop-blur-xl active:scale-90 transition-transform"><X size={24}/></button>
+	          <div className="w-full h-full flex items-center justify-center p-4">
+	            <img src={zoomImage} className="max-w-full max-h-full object-contain animate-slide-up" alt="Zoom" />
+	          </div>
+	        </div>
+	      )}
 
 
       <style>{`
