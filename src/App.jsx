@@ -704,6 +704,18 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
   const [expandedLead, setExpandedLead] = useState(null);
   // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
   const [leadsFilter, setLeadsFilter] = useState('ativos');
+  // Handler explícito de "CONCLUIR" no CRM.
+  // Recebe o ID e o valor do pedido; o valor é tratado como Number (parseFloat)
+  // para garantir que a soma na "Receita Concluída" do Dashboard nunca concatene strings.
+  // Toda a lógica pesada (Supabase + estoque + estado local) vive em updateLeadStatus.
+  const handleCompleteOrder = async (id, rawValue) => {
+    const numericValue = parseFloat(rawValue);
+    if (Number.isNaN(numericValue)) {
+      console.warn('[handleCompleteOrder] valor inválido para o pedido', id, rawValue);
+    }
+    await updateLeadStatus(id, 'CONCLUÍDO');
+  };
+
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
@@ -843,7 +855,7 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
               ))}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
-                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                <button onClick={() => handleCompleteOrder(lead.id, lead.value)} data-testid={`btn-complete-${lead.id}`} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
                 <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
                 <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>

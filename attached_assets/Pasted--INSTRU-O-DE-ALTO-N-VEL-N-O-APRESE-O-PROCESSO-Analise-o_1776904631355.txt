@@ -1,0 +1,29 @@
+### INSTRUÇÃO DE ALTO NÍVEL - NÃO APRESE O PROCESSO ###
+
+Analise o projeto como um Engenheiro de Software Sênior. Você tem falhado em implementar a lógica real, entregando apenas interface visual sem funcionalidade (onClick). O arquivo 'src/App.jsx' é grande e complexo, e você deve agir com extrema cautela e precisão.
+
+OBJETIVO: Implementar o fluxo de fechamento de vendas e atualização financeira em tempo real.
+
+PASSO 1: AUDITORIA DE ESTADO (STATE)
+Antes de editar, localize onde estão definidos os estados (useState) dos 'pedidos' e da 'receita'. Identifique os nomes exatos das variáveis de estado que armazenam os pedidos ativos e o valor total da receita concluída.
+
+PASSO 2: LÓGICA DO BOTÃO "CONCLUIR" NO CRM
+Não crie um botão novo. Localize o botão "CONCLUIR" já existente no CRM. Implemente uma função robusta chamada 'handleCompleteOrder' que:
+1. Receba o ID do pedido e o valor (price/value) do pedido.
+2. Atualize o status desse pedido para 'completed' no banco de dados (Supabase/API) e no estado local.
+3. Remova o pedido da lista de 'Novos Pedidos' (pendentes).
+4. Realize a SOMA MATEMÁTICA: Pegue o valor atual da 'Receita Concluída' e some o valor deste pedido. Certifique-se de tratar o valor como número (parseFloat), não como string, para evitar erros de cálculo (ex: 119.90 + 0).
+
+PASSO 3: CRIAÇÃO DA ÁREA DE ARQUIVO
+Garanta que exista um filtro ou uma nova seção no CRM chamada "Pedidos Concluídos". Esta seção deve renderizar apenas os pedidos cujo status seja 'completed'.
+
+PASSO 4: VALIDAÇÃO DE FUNCIONAMENTO
+Antes de finalizar, simule mentalmente o fluxo: "Ao clicar no botão X da Vitória Araújo, a função Y é disparada, o ID dela sai da array A, entra na array B e o valor financeiro Z é somado à variável Total".
+
+REQUISITOS TÉCNICOS:
+- Mantenha o 'export default App;' estritamente na ÚLTIMA LINHA (linha 1950+).
+- Não duplique imports.
+- Use a branch 'Resgate-emergency'.
+- Confirme que o PUSH para o GitHub foi realizado com sucesso.
+
+LEVE O TEMPO QUE PRECISAR PARA ANALISAR. Não quero uma solução rápida, quero uma solução que FUNCIONE no primeiro clique.
