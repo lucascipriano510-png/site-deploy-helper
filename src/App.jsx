@@ -817,7 +817,7 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           data-testid="leads-filter-ativos"
           className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'ativos' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
+          [NOVOS PEDIDOS] <span className="ml-1 opacity-70">({activeCount})</span>
         </button>
         <button
           type="button"
@@ -825,7 +825,7 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           data-testid="leads-filter-concluidos"
           className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'concluidos' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
+          [CONCLUÍDOS] <span className="ml-1 opacity-70">({concludedCount})</span>
         </button>
       </div>
       {(!visibleLeads || visibleLeads.length === 0) ? (
@@ -847,15 +847,25 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           {expandedLead === lead.id && (
             <div className="bg-zinc-950/50 p-6 border-t border-white/5 animate-slide-down space-y-4">
               {(lead.items || []).map((item, idx) => (
-                <div key={idx} className="flex gap-3 bg-zinc-900 p-3 rounded-2xl text-[10px] uppercase font-black">
-                  <span className="text-zinc-500">{item.quantity}x</span>
-                  <span className="text-white flex-1 truncate">{item.name}</span>
-                  <span className="text-emerald-500">{item.size}</span>
+                <div key={idx} className="flex gap-4 bg-zinc-900 p-4 rounded-2xl items-center border border-white/5">
+                  <div className="w-12 h-16 bg-zinc-950 rounded-lg overflow-hidden shrink-0 border border-white/10">
+                    <img src={item.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=100'} className="w-full h-full object-cover" alt="Thumb" />
+                  </div>
+                  <div className="flex-1 flex flex-col gap-1 min-w-0">
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-[11px] font-black text-white uppercase truncate">{item.name}</span>
+                      <span className="text-emerald-500 font-black text-[10px] shrink-0">{item.quantity || item.qty}x</span>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span className="text-[9px] font-bold text-zinc-500 uppercase bg-zinc-950 px-2 py-0.5 rounded border border-white/5">SKU: {item.sku || 'N/A'}</span>
+                      <span className="text-[9px] font-bold text-zinc-400 uppercase bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/10">TAM: {item.size || 'U'}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 pt-2">
                 <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
-                <button onClick={() => handleCompleteOrder(lead.id, lead.value)} data-testid={`btn-complete-${lead.id}`} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                <button onClick={() => handleCompleteOrder(lead.id, lead.value)} data-testid={`btn-complete-${lead.id}`} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500 border border-emerald-500/20">Concluir</button>
                 <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
                 <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>
@@ -1281,7 +1291,7 @@ function App() {
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
   const [adminTab, setAdminTab] = useState('dashboard'); 
-
+  const [zoomImage, setZoomImage] = useState(null);
   // Referência para o clique duplo
   const lastTapRef = useRef(0);
 
@@ -1608,18 +1618,18 @@ function App() {
                 onClick={prevBannerSlide}
                 aria-label="Banner anterior"
                 data-testid="banner-prev"
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-zinc-950/50 backdrop-blur-sm border border-white/10 text-white flex items-center justify-center active:scale-90 transition-transform shadow-lg"
+                className="absolute left-4 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full bg-zinc-950/80 backdrop-blur-md border border-white/20 text-white flex items-center justify-center active:scale-90 hover:bg-emerald-500 hover:text-zinc-950 hover:border-emerald-500 transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)]"
               >
-                <ChevronLeft size={20} />
+                <ChevronLeft size={24} />
               </button>
               <button
                 type="button"
                 onClick={nextBannerSlide}
                 aria-label="Próximo banner"
                 data-testid="banner-next"
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-zinc-950/50 backdrop-blur-sm border border-white/10 text-white flex items-center justify-center active:scale-90 transition-transform shadow-lg"
+                className="absolute right-4 top-1/2 -translate-y-1/2 z-30 w-12 h-12 rounded-full bg-zinc-950/80 backdrop-blur-md border border-white/20 text-white flex items-center justify-center active:scale-90 hover:bg-emerald-500 hover:text-zinc-950 hover:border-emerald-500 transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)]"
               >
-                <ChevronRight size={20} />
+                <ChevronRight size={24} />
               </button>
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
                 {activeBanners.map((_, idx) => (
@@ -1685,7 +1695,13 @@ function App() {
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
                    <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+                     <img 
+                       src={product.image} 
+                       onClick={(e) => { if (!isOutOfStock) { e.stopPropagation(); setZoomImage(product.image); } }}
+                       className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100 cursor-zoom-in'}`} 
+                       loading="lazy" 
+                       alt={product.name} 
+                     />
                      
                      {isOutOfStock && (
                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
@@ -1694,7 +1710,7 @@ function App() {
                      )}
 
                      {!isOutOfStock && (
-                        <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all"><Plus size={16}/></div>
+                        <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
                      )}
                    </div>
                    <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
@@ -1993,6 +2009,29 @@ function App() {
         </div>
       )}
 
+      {zoomImage && (
+        <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-4 animate-in">
+          <div className="relative w-full max-w-2xl h-full flex flex-col items-center justify-center">
+            <button 
+              onClick={() => setZoomImage(null)} 
+              className="absolute top-4 right-4 z-[510] bg-zinc-900/80 text-white p-4 rounded-full shadow-2xl backdrop-blur-md border border-white/10 active:scale-90 transition-transform"
+            >
+              <X size={24}/>
+            </button>
+            <img 
+              src={zoomImage} 
+              className="w-full h-auto max-h-[80vh] object-contain rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/5" 
+              alt="Zoomed product" 
+            />
+            <button 
+              onClick={() => setZoomImage(null)} 
+              className="mt-10 px-12 py-5 bg-white text-zinc-950 rounded-full font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 transition-transform"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
