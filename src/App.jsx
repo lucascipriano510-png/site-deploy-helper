@@ -702,6 +702,8 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
+  // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
+  const [leadsFilter, setLeadsFilter] = useState('ativos');
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
@@ -781,6 +783,13 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
     showToast('CSV exportado!');
   };
 
+  const concludedCount = (leads || []).filter(l => (l.status || 'NOVO') === 'CONCLUÍDO').length;
+  const activeCount = (leads || []).length - concludedCount;
+  const visibleLeads = (leads || []).filter(l => {
+    const st = l.status || 'NOVO';
+    return leadsFilter === 'concluidos' ? st === 'CONCLUÍDO' : st !== 'CONCLUÍDO';
+  });
+
   return (
     <div className="p-6 animate-in space-y-4 pb-32">
       <div className="flex justify-between items-center mb-2">
@@ -789,9 +798,29 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           <Database size={12} className="text-emerald-500"/> CSV
         </button>
       </div>
-      {(!leads || leads.length === 0) ? (
-        <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">Nenhum pedido recebido.</div>
-      ) : leads.map(lead => (
+      <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-900 rounded-2xl border border-white/5">
+        <button
+          type="button"
+          onClick={() => setLeadsFilter('ativos')}
+          data-testid="leads-filter-ativos"
+          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'ativos' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+        >
+          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setLeadsFilter('concluidos')}
+          data-testid="leads-filter-concluidos"
+          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'concluidos' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+        >
+          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
+        </button>
+      </div>
+      {(!visibleLeads || visibleLeads.length === 0) ? (
+        <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">
+          {leadsFilter === 'concluidos' ? 'Nenhum pedido concluído ainda.' : 'Nenhum pedido novo no momento.'}
+        </div>
+      ) : visibleLeads.map(lead => (
         <div key={lead.id} className={`bg-zinc-900 rounded-[32px] border overflow-hidden ${expandedLead === lead.id ? 'border-white/20' : 'border-white/5'}`}>
           <div className="p-6 cursor-pointer" onClick={() => setExpandedLead(expandedLead === lead.id ? null : lead.id)}>
             <div className="flex justify-between items-start mb-2">
