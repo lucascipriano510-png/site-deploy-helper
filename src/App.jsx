@@ -702,24 +702,51 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
+  // Loading rígido por (leadId + ação) — evita travar todos os botões juntos
+  const [loadingAction, setLoadingAction] = useState({ id: null, action: null });
+  const isBusy = (id, action) => loadingAction.id === id && loadingAction.action === action;
+  const isAnyBusy = (id) => loadingAction.id === id && loadingAction.action != null;
+
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
     const oldStatus = leadToUpdate.status || 'NOVO';
+    const remoteId = leadToUpdate._raw?.id || leadToUpdate.id;
+    const orderValue = Number(leadToUpdate.value || 0);
+
+    // 1) INÍCIO: ativa loading do botão correspondente
+    setLoadingAction({ id, action: newStatus });
+
+    // 2) DEBUG: log ANTES da chamada da API
+    console.log('[orders] >>> updateLeadStatus START', {
+      leadId: id,
+      remoteId,
+      orderNumber: leadToUpdate.orderNumber,
+      oldStatus,
+      newStatus,
+      value: orderValue,
+      itemsCount: (leadToUpdate.items || []).length,
+    });
+
     try {
-      // Sistema 3.0: estoque só baixa quando admin confirma a venda (CONCLUÍDO)
+      // 3) TRY: await da função do banco + validação imediata de erro
       if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
-        // monta order no formato esperado por confirmOrderSale
         const orderForSale = {
-          id: leadToUpdate._raw?.id || leadToUpdate.id,
+          id: remoteId,
           items: (leadToUpdate.items || []).map(i => ({
             id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
           })),
         };
-        await confirmOrderSale(orderForSale, products);
-        // Atualiza local: marca como concluído e dá baixa local pra refletir na hora
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
-        // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
+        console.log('[orders] -> confirmOrderSale payload', orderForSale);
+        const { data, error } = await confirmOrderSale(orderForSale, products)
+          .then(d => ({ data: d, error: null }))
+          .catch(e => ({ data: null, error: e }));
+        if (error) throw new Error(error.message || 'Falha ao confirmar venda');
+
+        // 4) SUCESSO: estado local SÓ atualiza após o banco confirmar
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO', _raw: data || l._raw } : l));
+
+        // Atualiza products local (reflete baixa imediata; polling re-sincroniza)
         const updatedProducts = products.map(p => {
           const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
           if (itemsForP.length === 0) return p;
@@ -733,22 +760,40 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
         });
         setProducts(updatedProducts);
-        showToast('Venda confirmada e estoque atualizado!');
+        console.log('[orders] <<< CONCLUÍDO ok — soma R$', orderValue, 'ao Dashboard');
+        showToast(`Venda confirmada! +R$ ${orderValue.toFixed(2)}`);
       } else if (newStatus === 'CANCELADO') {
-        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
+        const { data, error } = await cancelOrderRemote(remoteId)
+          .then(d => ({ data: d, error: null }))
+          .catch(e => ({ data: null, error: e }));
+        if (error) throw new Error(error.message || 'Falha ao cancelar pedido');
+
+        // SUCESSO: remove da lista ativa marcando como CANCELADO
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO', _raw: data || l._raw } : l));
+        console.log('[orders] <<< CANCELADO ok');
         showToast('Pedido cancelado.');
       } else {
-        // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
-        await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
-        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
+        const { data, error } = await updateOrderStatus(remoteId, newStatus)
+          .then(d => ({ data: d, error: null }))
+          .catch(e => ({ data: null, error: e }));
+        if (error) throw new Error(error.message || 'Falha ao atualizar status');
+
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus, _raw: data || l._raw } : l));
+        console.log('[orders] <<< status atualizado ok ->', newStatus);
         showToast('Status atualizado.');
       }
+      setExpandedLead(null);
     } catch (err) {
-      console.error('[orders] update status falhou:', err);
-      showToast('Erro ao atualizar pedido.', 'error');
+      // 5) CATCH: log da resposta de erro
+      console.log('[orders] !!! updateLeadStatus ERROR', {
+        leadId: id, remoteId, newStatus,
+        message: err?.message, error: err,
+      });
+      showToast(`Erro: ${err?.message || 'falha ao atualizar pedido'}`, 'error');
+    } finally {
+      // 6) FINALLY: SEMPRE libera o loading do botão
+      setLoadingAction({ id: null, action: null });
     }
-    setExpandedLead(null);
   };
   const statusColors = { 'NOVO': 'text-blue-500', 'EM ATENDIMENTO': 'text-amber-500', 'CONCLUÍDO': 'text-emerald-500', 'CANCELADO': 'text-red-500' };
 
