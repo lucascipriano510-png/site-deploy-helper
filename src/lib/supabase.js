@@ -84,3 +84,36 @@ export async function deleteBanner(id) {
   const { error } = await supabase.from('banners').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ===== STORAGE (IMAGENS) =====
+
+/**
+ * Faz o upload de um arquivo para o bucket 'product-images' e retorna a URL pública.
+ * @param {File} file - O arquivo original (sem compressão).
+ * @returns {Promise<string>} - A URL pública da imagem.
+ */
+export async function uploadImage(file) {
+  if (!file) return null;
+  
+  // Gera um nome único para o arquivo para evitar colisões
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+  const filePath = `uploads/${fileName}`;
+
+  // Faz o upload para o bucket 'product-images'
+  const { data, error } = await supabase.storage
+    .from('product-images')
+    .upload(filePath, file);
+
+  if (error) {
+    console.error('[storage] upload falhou:', error.message);
+    throw error;
+  }
+
+  // Obtém a URL pública
+  const { data: { publicUrl } } = supabase.storage
+    .from('product-images')
+    .getPublicUrl(filePath);
+
+  return publicUrl;
+}

@@ -13,7 +13,7 @@ import {
   Flame, ShieldCheck, Award, CreditCard, Lock, Megaphone, ImagePlus,
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
-import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fetchBanners, upsertBanner, deleteBanner as deleteBannerRemote } from './lib/supabase';
+import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fetchBanners, upsertBanner, deleteBanner as deleteBannerRemote, uploadImage } from './lib/supabase';
 import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
@@ -218,7 +218,7 @@ const AdminDashboard = ({ leads, products }) => {
   );
 };
 
-const AdminInventory = ({ products, setProducts, showToast, availableCollections }) => {
+const AdminInventory = ({ products, setProducts, showToast, availableCollections, productImageFile, setProductImageFile, uploadImage }) => {
   const [editMode, setEditMode] = useState(null); 
   const [invSearch, setInvSearch] = useState('');
   const [previewImage, setPreviewImage] = useState('');
@@ -249,6 +249,7 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
       setPreviewImage('');
       setFormSizes([{ size: 'P', stock: 5 }, { size: 'M', stock: 5 }]);
     }
+    setProductImageFile(null);
   }, [editMode]);
 
   useEffect(() => {
@@ -363,41 +364,54 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setIsUploadingImage(true);
+      setProductImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        // Removemos rigorosamente qualquer compressão ou canvas.
-        // Usamos o Base64 original do arquivo em alta resolução.
         setPreviewImage(reader.result);
-        setIsUploadingImage(false);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    if (isUploadingImage) { showToast('Aguarde o processamento da imagem...', 'error'); return; }
-    const computedStock = formSizes.reduce((acc, curr) => acc + (parseInt(curr.stock) || 0), 0);
-    const fd = new FormData(e.target);
-    const data = {
-      id: editMode === 'new' ? Date.now() : editMode.id,
-      sku: fd.get('sku').toUpperCase(),
-      name: fd.get('name'),
-      price: parseFloat(fd.get('price')),
-      category: fd.get('category').toUpperCase(),
-      collection_name: fd.get('collection_name') || null,
-      image: previewImage || editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400',
-      stock: computedStock, 
-      sales: editMode === 'new' ? 0 : editMode.sales,
-      sizes: formSizes.filter(s => s.size && s.size.trim() !== ''),
-      featured: fd.get('featured') === 'on'
-    };
-    const updatedProducts = editMode === 'new' ? [data, ...products] : products.map(p => p.id === data.id ? data : p);
-    setProducts(updatedProducts);
-    showToast('Produto salvo com sucesso!');
-    setEditMode(null);
-    setPreviewImage('');
+    setIsUploadingImage(true);
+    try {
+      let imageUrl = editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400';
+      
+      // Se houver um novo arquivo, faz o upload para o Storage
+      if (productImageFile) {
+        showToast('Enviando imagem em alta resolução...', 'info');
+        imageUrl = await uploadImage(productImageFile);
+      }
+
+      const computedStock = formSizes.reduce((acc, curr) => acc + (parseInt(curr.stock) || 0), 0);
+      const fd = new FormData(e.target);
+      const data = {
+        id: editMode === 'new' ? Date.now() : editMode.id,
+        sku: fd.get('sku').toUpperCase(),
+        name: fd.get('name'),
+        price: parseFloat(fd.get('price')),
+        category: fd.get('category').toUpperCase(),
+        collection_name: fd.get('collection_name') || null,
+        image: imageUrl,
+        stock: computedStock, 
+        sales: editMode === 'new' ? 0 : editMode.sales,
+        sizes: formSizes.filter(s => s.size && s.size.trim() !== ''),
+        featured: fd.get('featured') === 'on'
+      };
+      const updatedProducts = editMode === 'new' ? [data, ...products] : products.map(p => p.id === data.id ? data : p);
+      setProducts(updatedProducts);
+      showToast('Produto salvo com sucesso!');
+      setEditMode(null);
+      setPreviewImage('');
+      setProductImageFile(null);
+    } catch (err) {
+      console.error('[save] erro:', err);
+      showToast('Erro ao salvar produto: ' + err.message, 'error');
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const processBarcode = (code) => {
@@ -868,38 +882,56 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
   );
 };
 
-const AdminBanners = ({ banners, setBanners, showToast }) => {
+const AdminBanners = ({ banners, setBanners, showToast, bannerImageFile, setBannerImageFile, uploadImage }) => {
   const [editBannerMode, setEditBannerMode] = useState(null);
   const [previewBannerImage, setPreviewBannerImage] = useState('');
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
-  useEffect(() => { setPreviewBannerImage(editBannerMode?.image || ''); }, [editBannerMode]);
+  useEffect(() => { 
+    setPreviewBannerImage(editBannerMode?.image || ''); 
+    setBannerImageFile(null);
+  }, [editBannerMode]);
+
   const handleBannerFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setIsUploadingBanner(true);
+      setBannerImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        // Removemos o crop/canvas para preservar a resolução original do iPhone.
         setPreviewBannerImage(reader.result);
-        setIsUploadingBanner(false);
       };
       reader.readAsDataURL(file);
     }
   };
-  const handleSaveBanner = (e) => {
+
+  const handleSaveBanner = async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const data = { 
-      id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, 
-      title: fd.get('title'), 
-      subtitle: fd.get('subtitle'), 
-      buttonText: fd.get('buttonText'), 
-      collection_name: fd.get('collection_name'),
-      image: previewBannerImage || editBannerMode?.image, 
-      active: fd.get('active') === 'on' 
-    };
-    setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
-    showToast('Banner salvo!'); setEditBannerMode(null);
+    setIsUploadingBanner(true);
+    try {
+      let imageUrl = editBannerMode?.image || '';
+      if (bannerImageFile) {
+        showToast('Enviando banner em alta resolução...', 'info');
+        imageUrl = await uploadImage(bannerImageFile);
+      }
+      const fd = new FormData(e.target);
+      const data = { 
+        id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, 
+        title: fd.get('title'), 
+        subtitle: fd.get('subtitle'), 
+        buttonText: fd.get('buttonText'), 
+        collection_name: fd.get('collection_name'),
+        image: imageUrl, 
+        active: fd.get('active') === 'on' 
+      };
+      setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
+      showToast('Banner salvo!'); 
+      setEditBannerMode(null);
+      setBannerImageFile(null);
+    } catch (err) {
+      console.error('[banner] erro:', err);
+      showToast('Erro ao salvar banner: ' + err.message, 'error');
+    } finally {
+      setIsUploadingBanner(false);
+    }
   };
   return (
     <div className="p-6 animate-in space-y-6 pb-32">
@@ -1322,6 +1354,8 @@ function App() {
   const [showProductModal, setShowProductModal] = useState(false);
   const [activeSize, setActiveSize] = useState(null);
   const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [bannerImageFile, setBannerImageFile] = useState(null);
   const lastTapRef = useRef(0);
   useEffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
@@ -1575,9 +1609,9 @@ function App() {
         <AdminHeader handleLogout={handleLogout} />
         <main className="max-w-md mx-auto">
           {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
-          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} />}
+          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
           {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
-          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} />}
+          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
           {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
         </main>
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
