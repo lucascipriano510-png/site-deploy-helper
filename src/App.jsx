@@ -846,21 +846,21 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           onClick={() => setLeadsFilter('NOVOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'NOVOS' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
+          Novos <span className="ml-1 opacity-70">({novosCount})</span>
         </button>
         <button
           type="button"
           onClick={() => setLeadsFilter('CONCLUÍDOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CONCLUÍDOS' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Concluídos ({concluidosCount})
+          Concluídos <span className="ml-1 opacity-70">({concluidosCount})</span>
         </button>
         <button
           type="button"
           onClick={() => setLeadsFilter('CANCELADOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CANCELADOS' ? 'bg-red-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
+          Cancelados <span className="ml-1 opacity-70">({canceladosCount})</span>
         </button>
       </div>
       {(!visibleLeads || visibleLeads.length === 0) ? (
