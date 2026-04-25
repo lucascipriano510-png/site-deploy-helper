@@ -1675,12 +1675,14 @@ function App() {
       <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-20 selection:bg-emerald-500 selection:text-zinc-950">
         <AdminHeader handleLogout={handleLogout} />
         <main className="max-w-md mx-auto">
-          {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
-          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
-          {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
-          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
-          {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
-          {adminTab === 'rastreio' && <AdminRastreio />}
+          <AdminTabErrorBoundary resetKey={adminTab}>
+            {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
+            {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
+            {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
+            {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
+            {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
+            {adminTab === 'rastreio' && <AdminRastreio />}
+          </AdminTabErrorBoundary>
         </main>
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
           <button onClick={() => setAdminTab('dashboard')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}`}><LayoutDashboard size={18}/><span className="text-[8px] font-black uppercase">Painel</span></button>
