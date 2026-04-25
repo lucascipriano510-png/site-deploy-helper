@@ -71,6 +71,40 @@ const DEFAULT_CONFIG = {
   ]
 };
 
+class AdminTabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || 'Erro inesperado na aba.' };
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, message: '' });
+    }
+  }
+
+  componentDidCatch(error) {
+    console.error('[ADMIN_TAB_ERROR]', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 pb-32 text-center">
+          <div className="bg-red-500/10 border border-red-500/30 rounded-3xl p-6 text-red-300 text-xs font-bold">
+            Erro ao abrir esta aba. Troque de aba e tente novamente.
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ==========================================
 // 2. FUNÇÕES DE TRACKING E UTILITÁRIOS
 // ==========================================
@@ -846,21 +880,21 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           onClick={() => setLeadsFilter('NOVOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'NOVOS' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
+          Novos <span className="ml-1 opacity-70">({novosCount})</span>
         </button>
         <button
           type="button"
           onClick={() => setLeadsFilter('CONCLUÍDOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CONCLUÍDOS' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Concluídos ({concluidosCount})
+          Concluídos <span className="ml-1 opacity-70">({concluidosCount})</span>
         </button>
         <button
           type="button"
           onClick={() => setLeadsFilter('CANCELADOS')}
           className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CANCELADOS' ? 'bg-red-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
+          Cancelados <span className="ml-1 opacity-70">({canceladosCount})</span>
         </button>
       </div>
       {(!visibleLeads || visibleLeads.length === 0) ? (
@@ -1641,12 +1675,14 @@ function App() {
       <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-20 selection:bg-emerald-500 selection:text-zinc-950">
         <AdminHeader handleLogout={handleLogout} />
         <main className="max-w-md mx-auto">
-          {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
-          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
-          {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
-          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
-          {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
-          {adminTab === 'rastreio' && <AdminRastreio />}
+          <AdminTabErrorBoundary resetKey={adminTab}>
+            {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
+            {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
+            {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
+            {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
+            {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
+            {adminTab === 'rastreio' && <AdminRastreio />}
+          </AdminTabErrorBoundary>
         </main>
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
           <button onClick={() => setAdminTab('dashboard')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}`}><LayoutDashboard size={18}/><span className="text-[8px] font-black uppercase">Painel</span></button>
