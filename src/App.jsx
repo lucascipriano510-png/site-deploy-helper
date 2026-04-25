@@ -1384,6 +1384,7 @@ function App() {
   const [whatsappLink, setWhatsappLink] = useState('');
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
+  const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
   const [adminTab, setAdminTab] = useState('dashboard'); 
 
   // Referência para o clique duplo
