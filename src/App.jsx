@@ -17,6 +17,7 @@ import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fet
 import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
+import { dispatchCAPIPurchase } from './lib/capi';
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip as ReTooltip, Cell } from 'recharts';
 import AdminRastreio from './components/AdminRastreio';
 
@@ -746,6 +747,15 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           });
           setProducts(updatedProducts);
         }
+
+        // [CAPI] Dispara Purchase para a Meta (fire-and-forget) só na 1ª conclusão
+        if (oldStatus !== 'CONCLUÍDO') {
+          dispatchCAPIPurchase({
+            phone: leadToUpdate.phone,
+            value: leadToUpdate.value,
+          }).catch(() => {});
+        }
+
         showToast('Venda concluída!');
       } else if (newStatus === 'CANCELADO') {
         await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
