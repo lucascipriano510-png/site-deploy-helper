@@ -767,8 +767,13 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         });
         setProducts(updatedProducts);
         showToast('Venda confirmada e estoque atualizado!');
+        // 🔴 CAPI — fire-and-forget: dispara Purchase para a Meta
+        dispatchCAPIPurchase({
+          phone: leadToUpdate.phone,
+          value: leadToUpdate.value,
+        }).catch(() => {});
       } else if (newStatus === 'CANCELADO') {
-        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
+        await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
       } else {
