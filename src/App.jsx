@@ -731,8 +731,9 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
-  // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
-  const [leadsFilter, setLeadsFilter] = useState('ativos');
+  const [isProcessing, setIsProcessing] = useState(false);
+  // Filtro: 'NOVOS' = NOVO + EM ATENDIMENTO; 'CONCLUÍDOS' e 'CANCELADOS' ficam separados
+  const [leadsFilter, setLeadsFilter] = useState('NOVOS');
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
