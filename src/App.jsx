@@ -13,11 +13,13 @@ import {
   Flame, ShieldCheck, Award, CreditCard, Lock, Megaphone, ImagePlus,
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
-import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder as cancelOrderRemote, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
+import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fetchBanners, upsertBanner, deleteBanner as deleteBannerRemote, uploadImage } from './lib/supabase';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
+import { dispatchCAPIPurchase } from './lib/capi';
 import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip as ReTooltip, Cell } from 'recharts';
+import AdminRastreio from './components/AdminRastreio';
 
 // ==========================================
 // 1. CONFIGURAÇÃO E DADOS INICIAIS
@@ -218,7 +220,7 @@ const AdminDashboard = ({ leads, products }) => {
   );
 };
 
-const AdminInventory = ({ products, setProducts, showToast }) => {
+const AdminInventory = ({ products, setProducts, showToast, availableCollections, productImageFile, setProductImageFile, uploadImage }) => {
   const [editMode, setEditMode] = useState(null); 
   const [invSearch, setInvSearch] = useState('');
   const [previewImage, setPreviewImage] = useState('');
@@ -249,6 +251,7 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
       setPreviewImage('');
       setFormSizes([{ size: 'P', stock: 5 }, { size: 'M', stock: 5 }]);
     }
+    setProductImageFile(null);
   }, [editMode]);
 
   useEffect(() => {
@@ -363,13 +366,13 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setIsUploadingImage(true);
+      setProductImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 2000; // Resolução Ultra para iPhone Standard
+          const MAX_SIZE = 400; 
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -379,11 +382,8 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
           }
           canvas.width = width; canvas.height = height;
           const ctx = canvas.getContext('2d');
-          // Qualidade Máxima de Interpolação
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
-          setPreviewImage(canvas.toDataURL('image/jpeg', 0.95)); // Qualidade 95% para nitidez extrema
+          setPreviewImage(canvas.toDataURL('image/jpeg', 0.6)); 
           setIsUploadingImage(false);
         };
         img.src = reader.result;
@@ -392,28 +392,45 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    if (isUploadingImage) { showToast('Aguarde o processamento da imagem...', 'error'); return; }
-    const computedStock = formSizes.reduce((acc, curr) => acc + (parseInt(curr.stock) || 0), 0);
-    const fd = new FormData(e.target);
-    const data = {
-      id: editMode === 'new' ? Date.now() : editMode.id,
-      name: fd.get('name'),
-      sku: fd.get('sku'),
-      price: parseFloat(fd.get('price')),
-      category: fd.get('category').toUpperCase(),
-      image: previewImage || editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400',
-      stock: computedStock, 
-      sales: editMode === 'new' ? 0 : editMode.sales,
-      sizes: formSizes.filter(s => s.size && s.size.trim() !== ''),
-      featured: fd.get('featured') === 'on'
-    };
-    const updatedProducts = editMode === 'new' ? [data, ...products] : products.map(p => p.id === data.id ? data : p);
-    setProducts(updatedProducts);
-    showToast('Produto salvo com sucesso!');
-    setEditMode(null);
-    setPreviewImage('');
+    setIsUploadingImage(true);
+    try {
+      let imageUrl = editMode?.image || 'https://images.unsplash.com/photo-1558769132-cb1fac08c04b?w=400';
+      
+      // Se houver um novo arquivo, faz o upload para o Storage
+      if (productImageFile) {
+        showToast('Enviando imagem em alta resolução...', 'info');
+        imageUrl = await uploadImage(productImageFile);
+      }
+
+      const computedStock = formSizes.reduce((acc, curr) => acc + (parseInt(curr.stock) || 0), 0);
+      const fd = new FormData(e.target);
+      const data = {
+        id: editMode === 'new' ? Date.now() : editMode.id,
+        sku: fd.get('sku').toUpperCase(),
+        name: fd.get('name'),
+        price: parseFloat(fd.get('price')),
+        category: fd.get('category').toUpperCase(),
+        collection_name: fd.get('collection_name') || null,
+        image: imageUrl,
+        stock: computedStock, 
+        sales: editMode === 'new' ? 0 : editMode.sales,
+        sizes: formSizes.filter(s => s.size && s.size.trim() !== ''),
+        featured: fd.get('featured') === 'on'
+      };
+      const updatedProducts = editMode === 'new' ? [data, ...products] : products.map(p => p.id === data.id ? data : p);
+      setProducts(updatedProducts);
+      showToast('Produto salvo com sucesso!');
+      setEditMode(null);
+      setPreviewImage('');
+      setProductImageFile(null);
+    } catch (err) {
+      console.error('[save] erro:', err);
+      showToast('Erro ao salvar produto: ' + err.message, 'error');
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const processBarcode = (code) => {
@@ -650,8 +667,17 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
             </div>
             <div className="col-span-2 space-y-1">
                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Categoria</label>
-               <input name="category" defaultValue={editMode?.category} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none uppercase" required />
-            </div>
+	              <input name="category" defaultValue={editMode?.category} placeholder="Categoria (ex: VESTUÁRIO)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	            </div>
+	            <div className="col-span-2 space-y-1">
+	               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Vincular à Coleção (Opcional)</label>
+	               <select name="collection_name" defaultValue={editMode?.collection_name || ""} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase appearance-none cursor-pointer focus:border-emerald-500/50">
+	                 <option value="">Nenhuma Coleção</option>
+	                 {availableCollections.map(c => (
+	                   <option key={c} value={c}>{c}</option>
+	                 ))}
+	               </select>
+	            </div>
             <div className="col-span-2 bg-zinc-950 p-4 rounded-[20px] border border-white/5 space-y-3 mt-2">
                <label className="text-[9px] font-black text-emerald-500 uppercase flex items-center gap-1"><Layers size={12}/> Grade de Tamanhos</label>
                {formSizes.map((item, idx) => (
@@ -705,105 +731,52 @@ const AdminInventory = ({ products, setProducts, showToast }) => {
 
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  // Filtro: 'ativos' = NOVO + EM ATENDIMENTO + CANCELADO; 'concluidos' = CONCLUÍDO
   const [leadsFilter, setLeadsFilter] = useState('ativos');
-
-  // Handler de "CONCLUIR" (Fluxo Rígido)
-  const handleCompleteOrder = async (id, rawValue) => {
-    setIsProcessing(true); // 1. INÍCIO
-    console.log('[CRM_ACTION] Concluir', { id, action: 'CONCLUÍDO', valor: rawValue }); // 2. DEBUG
-    
+  const updateLeadStatus = async (id, newStatus) => {
+    const leadToUpdate = leads.find(l => l.id === id);
+    if (!leadToUpdate) return;
+    const oldStatus = leadToUpdate.status || 'NOVO';
     try {
-      const leadToUpdate = leads.find(l => l.id === id);
-      if (!leadToUpdate) throw new Error('Pedido não localizado');
-
-      const orderForSale = {
-        id: leadToUpdate._raw?.id || leadToUpdate.id,
-        items: (leadToUpdate.items || []).map(i => ({
-          id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
-        })),
-      };
-
-      // 3. TRY: Await da função do banco
-      const { error } = await confirmOrderSale(orderForSale, products)
-        .then(() => ({ error: null }))
-        .catch(err => ({ error: err }));
-      
-      if (error) throw new Error(error.message); // Validação imediata
-
-      // 4. SUCESSO: Atualização do estado local SÓ APÓS o banco
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
-      
-      const updatedProducts = products.map(p => {
-        const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
-        if (itemsForP.length === 0) return p;
-        const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
-        const newSizes = (p.sizes || []).map(s => {
-          const sName = typeof s === 'string' ? s : (s.size || 'U');
-          const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
-          const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
-          return { size: sName, stock: Math.max(0, sStock - dec) };
+      // Sistema 3.0: estoque só baixa quando admin confirma a venda (CONCLUÍDO)
+      if (oldStatus !== 'CONCLUÍDO' && newStatus === 'CONCLUÍDO') {
+        // monta order no formato esperado por confirmOrderSale
+        const orderForSale = {
+          id: leadToUpdate._raw?.id || leadToUpdate.id,
+          items: (leadToUpdate.items || []).map(i => ({
+            id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
+          })),
+        };
+        await confirmOrderSale(orderForSale, products);
+        // Atualiza local: marca como concluído. O `value` é preservado pelo spread,
+        // então o totalRevenue do Dashboard é recalculado em tempo real (useMemo).
+        // A persistência no Supabase já foi feita por confirmOrderSale acima.
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CONCLUÍDO' } : l));
+        // Atualiza products local pra refletir baixa imediata (polling vai re-sincronizar)
+        const updatedProducts = products.map(p => {
+          const itemsForP = (orderForSale.items || []).filter(it => it.id === p.id);
+          if (itemsForP.length === 0) return p;
+          const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
+          const newSizes = (p.sizes || []).map(s => {
+            const sName = typeof s === 'string' ? s : (s.size || 'U');
+            const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+            const dec = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
+            return { size: sName, stock: Math.max(0, sStock - dec) };
+          });
+          return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
         });
-        return { ...p, sizes: newSizes, stock: Math.max(0, (p.stock || 0) - totalQty), sales: (p.sales || 0) + totalQty };
-      });
-      setProducts(updatedProducts);
-      showToast('Venda concluída com sucesso!');
-      setExpandedLead(null);
-    } catch (err) {
-      console.log('[CRM_ERROR]', err); // 5. CATCH
-      showToast('Erro ao concluir pedido.', 'error');
-    } finally {
-      setIsProcessing(false); // 6. FINALLY
-    }
-  };
-
-  // Handler de "CANCELAR" (Fluxo Rígido)
-  const handleCancelOrder = async (id) => {
-    setIsProcessing(true); // 1. INÍCIO
-    console.log('[CRM_ACTION] Cancelar', { id, action: 'CANCELADO' }); // 2. DEBUG
-
-    try {
-      const leadToUpdate = leads.find(l => l.id === id);
-      if (!leadToUpdate) throw new Error('Pedido não localizado');
-
-      // 3. TRY: Await da função do banco
-      const { error } = await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id)
-        .then(() => ({ error: null }))
-        .catch(err => ({ error: err }));
-      
-      if (error) throw new Error(error.message); // Validação imediata
-
-      // 4. SUCESSO: Atualização do estado local
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
-      showToast('Pedido cancelado.');
-      setExpandedLead(null);
-    } catch (err) {
-      console.log('[CRM_ERROR]', err); // 5. CATCH
-      showToast('Erro ao cancelar pedido.', 'error');
-    } finally {
-      setIsProcessing(false); // 6. FINALLY
-    }
-  };
-
-  // Handler de "ATENDER" (Fluxo Rígido)
-  const handleStartService = async (id) => {
-    setIsProcessing(true); // 1. INÍCIO
-    console.log('[CRM_ACTION] Atender', { id, action: 'EM ATENDIMENTO' }); // 2. DEBUG
-
-    try {
-      const leadToUpdate = leads.find(l => l.id === id);
-      if (!leadToUpdate) throw new Error('Pedido não localizado');
-
-      // 3. TRY: Await da função do banco
-      const { error } = await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, 'EM ATENDIMENTO')
-        .then(() => ({ error: null }))
-        .catch(err => ({ error: err }));
-      
-      if (error) throw new Error(error.message); // Validação imediata
-
-      // 4. SUCESSO: Atualização do estado local
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'EM ATENDIMENTO' } : l));
-      showToast('Status atualizado.');
+        setProducts(updatedProducts);
+        showToast('Venda confirmada e estoque atualizado!');
+      } else if (newStatus === 'CANCELADO') {
+        await cancelOrderRemote(leadToUpdate._raw?.id || leadToUpdate.id);
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
+        showToast('Pedido cancelado.');
+      } else {
+        // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
+        await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
+        setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
+        showToast('Status atualizado.');
+      }
     } catch (err) {
       console.log('[CRM_ERROR]', err); // 5. CATCH
       showToast('Erro ao atualizar status.', 'error');
@@ -841,11 +814,16 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
     showToast('CSV exportado!');
   };
 
-  const concludedCount = (leads || []).filter(l => (l.status || 'NOVO') === 'CONCLUÍDO').length;
-  const activeCount = (leads || []).length - concludedCount;
+  const novosCount = (leads || []).filter(l => (l.status || 'NOVO') === 'NOVO' || l.status === 'EM ATENDIMENTO').length;
+  const concluidosCount = (leads || []).filter(l => l.status === 'CONCLUÍDO').length;
+  const canceladosCount = (leads || []).filter(l => l.status === 'CANCELADO').length;
+
   const visibleLeads = (leads || []).filter(l => {
     const st = l.status || 'NOVO';
-    return leadsFilter === 'concluidos' ? st === 'CONCLUÍDO' : st !== 'CONCLUÍDO';
+    if (leadsFilter === 'NOVOS') return st === 'NOVO' || st === 'EM ATENDIMENTO';
+    if (leadsFilter === 'CONCLUÍDOS') return st === 'CONCLUÍDO';
+    if (leadsFilter === 'CANCELADOS') return st === 'CANCELADO';
+    return true;
   });
 
   return (
@@ -856,27 +834,32 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           <Database size={12} className="text-emerald-500"/> CSV
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-900 rounded-2xl border border-white/5">
+      <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-900 rounded-2xl border border-white/5">
         <button
           type="button"
-          onClick={() => setLeadsFilter('ativos')}
-          data-testid="leads-filter-ativos"
-          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'ativos' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+          onClick={() => setLeadsFilter('NOVOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'NOVOS' ? 'bg-white text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          [NOVOS PEDIDOS] <span className="ml-1 opacity-70">({activeCount})</span>
+          Novos Pedidos <span className="ml-1 opacity-70">({activeCount})</span>
         </button>
         <button
           type="button"
-          onClick={() => setLeadsFilter('concluidos')}
-          data-testid="leads-filter-concluidos"
-          className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'concluidos' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+          onClick={() => setLeadsFilter('CONCLUÍDOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CONCLUÍDOS' ? 'bg-emerald-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
         >
-          [CONCLUÍDOS] <span className="ml-1 opacity-70">({concludedCount})</span>
+          Concluídos ({concluidosCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setLeadsFilter('CANCELADOS')}
+          className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${leadsFilter === 'CANCELADOS' ? 'bg-red-500 text-zinc-950 shadow-lg' : 'bg-transparent text-zinc-500'}`}
+        >
+          Pedidos Concluídos <span className="ml-1 opacity-70">({concludedCount})</span>
         </button>
       </div>
       {(!visibleLeads || visibleLeads.length === 0) ? (
         <div className="text-center py-20 bg-zinc-900 rounded-[40px] border border-white/5 text-zinc-700">
-          {leadsFilter === 'concluidos' ? 'Nenhum pedido concluído ainda.' : 'Nenhum pedido novo no momento.'}
+          Nenhum pedido nesta aba.
         </div>
       ) : visibleLeads.map(lead => (
         <div key={lead.id} className={`bg-zinc-900 rounded-[32px] border overflow-hidden ${expandedLead === lead.id ? 'border-white/20' : 'border-white/5'}`}>
@@ -915,36 +898,11 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
                   </div>
                 </div>
               ))}
-              <div className="grid grid-cols-2 gap-3 pt-4">
-                <button 
-                  disabled={isProcessing}
-                  onClick={() => handleStartService(lead.id)} 
-                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 border ${isProcessing ? 'bg-zinc-800 text-zinc-600 border-white/5' : 'bg-zinc-800 hover:bg-zinc-700 text-white border-white/5'}`}
-                >
-                  <Clock size={14} className={isProcessing ? 'animate-spin' : ''}/> Atender
-                </button>
-                <button 
-                  disabled={isProcessing}
-                  onClick={() => handleCompleteOrder(lead.id, lead.value)} 
-                  data-testid={`btn-complete-${lead.id}`} 
-                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(16,185,129,0.2)] ${isProcessing ? 'bg-emerald-900 text-emerald-500 opacity-50' : 'bg-emerald-500 text-zinc-950'}`}
-                >
-                  <CheckCircle2 size={14} className={isProcessing ? 'animate-spin' : ''}/> CONCLUIR
-                </button>
-                <button 
-                  disabled={isProcessing}
-                  onClick={() => handleCancelOrder(lead.id)} 
-                  className={`py-4 rounded-2xl text-[10px] font-black uppercase transition-all active:scale-95 border ${isProcessing ? 'bg-red-950 text-red-900 border-red-950' : 'bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/10'}`}
-                >
-                  <XCircle size={14} className={isProcessing ? 'animate-pulse' : ''}/> Cancelar
-                </button>
-                <button 
-                  disabled={isProcessing}
-                  onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} 
-                  className="py-4 bg-zinc-900 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <MessageCircle size={14} className="text-emerald-500"/> Chamar
-                </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => updateLeadStatus(lead.id, 'EM ATENDIMENTO')} className="py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase text-white">Atender</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CONCLUÍDO')} className="py-3 bg-emerald-500/10 rounded-xl text-[9px] font-black uppercase text-emerald-500">Concluir</button>
+                <button onClick={() => updateLeadStatus(lead.id, 'CANCELADO')} className="py-3 bg-red-500/10 rounded-xl text-[9px] font-black uppercase text-red-500">Cancelar</button>
+                <button onClick={() => window.open(`https://api.whatsapp.com/send?phone=${lead.phone}&text=Olá ${lead.name.split(' ')[0]}!`)} className="py-3 bg-emerald-500 rounded-xl text-[9px] font-black uppercase text-zinc-950 flex items-center justify-center gap-1"><MessageCircle size={10}/> Chamar</button>
               </div>
             </div>
           )}
@@ -954,43 +912,56 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
   );
 };
 
-const AdminBanners = ({ banners, setBanners, showToast }) => {
+const AdminBanners = ({ banners, setBanners, showToast, bannerImageFile, setBannerImageFile, uploadImage }) => {
   const [editBannerMode, setEditBannerMode] = useState(null);
   const [previewBannerImage, setPreviewBannerImage] = useState('');
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
-  useEffect(() => { setPreviewBannerImage(editBannerMode?.image || ''); }, [editBannerMode]);
+  useEffect(() => { 
+    setPreviewBannerImage(editBannerMode?.image || ''); 
+    setBannerImageFile(null);
+  }, [editBannerMode]);
+
   const handleBannerFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setIsUploadingBanner(true);
+      setBannerImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const TW = 800; const TH = 450;
-          canvas.width = TW; canvas.height = TH;
-          const ctx = canvas.getContext('2d');
-          const aspect = img.width / img.height;
-          const tAspect = TW / TH;
-          let rw, rh, xs, ys;
-          if (aspect < tAspect) { rw = img.width; rh = img.width / tAspect; xs = 0; ys = (img.height - rh) / 2; }
-          else { rh = img.height; rw = img.height * tAspect; xs = (img.width - rw) / 2; ys = 0; }
-          ctx.drawImage(img, xs, ys, rw, rh, 0, 0, TW, TH);
-          setPreviewBannerImage(canvas.toDataURL('image/jpeg', 0.7)); 
-          setIsUploadingBanner(false);
-        };
-        img.src = reader.result;
+        setPreviewBannerImage(reader.result);
       };
       reader.readAsDataURL(file);
     }
   };
-  const handleSaveBanner = (e) => {
+
+  const handleSaveBanner = async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const data = { id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, title: fd.get('title'), subtitle: fd.get('subtitle'), buttonText: fd.get('buttonText'), image: previewBannerImage || editBannerMode?.image, active: fd.get('active') === 'on' };
-    setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
-    showToast('Banner salvo!'); setEditBannerMode(null);
+    setIsUploadingBanner(true);
+    try {
+      let imageUrl = editBannerMode?.image || '';
+      if (bannerImageFile) {
+        showToast('Enviando banner em alta resolução...', 'info');
+        imageUrl = await uploadImage(bannerImageFile);
+      }
+      const fd = new FormData(e.target);
+      const data = { 
+        id: editBannerMode === 'new' ? Date.now() : editBannerMode.id, 
+        title: fd.get('title'), 
+        subtitle: fd.get('subtitle'), 
+        buttonText: fd.get('buttonText'), 
+        collection_name: fd.get('collection_name'),
+        image: imageUrl, 
+        active: fd.get('active') === 'on' 
+      };
+      setBanners(editBannerMode === 'new' ? [...banners, data] : (banners || []).map(b => b.id === data.id ? data : b));
+      showToast('Banner salvo!'); 
+      setEditBannerMode(null);
+      setBannerImageFile(null);
+    } catch (err) {
+      console.error('[banner] erro:', err);
+      showToast('Erro ao salvar banner: ' + err.message, 'error');
+    } finally {
+      setIsUploadingBanner(false);
+    }
   };
   return (
     <div className="p-6 animate-in space-y-6 pb-32">
@@ -1015,7 +986,11 @@ const AdminBanners = ({ banners, setBanners, showToast }) => {
           </div>
           <input name="title" defaultValue={editBannerMode?.title} placeholder="Título" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" required />
           <input name="subtitle" defaultValue={editBannerMode?.subtitle} placeholder="Subtítulo" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none" />
-          <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	          <input name="buttonText" defaultValue={editBannerMode?.buttonText || 'VER PEÇAS'} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	          <div className="space-y-1">
+	            <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Nome da Coleção (Ex: Lacoste)</label>
+	            <input name="collection_name" defaultValue={editBannerMode?.collection_name} placeholder="Digite o nome da coleção..." className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />
+	          </div>
           <label className="flex items-center gap-3 bg-zinc-950 p-4 rounded-2xl border border-white/5"><input type="checkbox" name="active" defaultChecked={editBannerMode === 'new' ? true : editBannerMode?.active} className="w-5 h-5 accent-emerald-500" /><span className="text-[11px] font-black uppercase text-white">Ativo no site</span></label>
           <button type="submit" disabled={isUploadingBanner} className="w-full py-4 bg-emerald-500 text-zinc-950 rounded-[20px] font-black uppercase text-[10px] tracking-widest">{isUploadingBanner ? 'Salvando...' : 'Confirmar'}</button>
         </form>
@@ -1184,9 +1159,46 @@ function App() {
   };
   const products = productsRaw;
 
-  const [banners, setBanners] = useState(() => {
-    try { const saved = localStorage.getItem(BANNERS_STORAGE_KEY); return saved ? JSON.parse(saved) : DEFAULT_BANNERS; } catch(e) { return DEFAULT_BANNERS; }
-  });
+  const [banners, setBannersRaw] = useState(DEFAULT_BANNERS);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const remote = await fetchBanners();
+        if (alive && Array.isArray(remote) && remote.length > 0) {
+          // Normaliza button_text -> buttonText para o UI
+          const normalized = remote.map(b => ({
+            ...b,
+            buttonText: b.button_text || b.buttonText || 'VER PEÇAS'
+          }));
+          setBannersRaw(normalized);
+        }
+      } catch (e) { console.warn('[banners] fetch falhou:', e?.message); }
+    };
+    load();
+    const t = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  const setBanners = (updater) => {
+    setBannersRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        const prevIds = new Set((prev || []).map(b => b.id));
+        const nextIds = new Set((next || []).map(b => b.id));
+        // upserts
+        (next || []).forEach(b => {
+          const old = (prev || []).find(o => o.id === b.id);
+          if (!old || JSON.stringify(old) !== JSON.stringify(b)) {
+            upsertBanner(b).catch(err => console.warn('[banners] upsert falhou:', err?.message));
+          }
+        });
+        // deletes
+        (prev || []).forEach(b => { if (!nextIds.has(b.id)) deleteBannerRemote(b.id).catch(err => console.warn('[banners] delete falhou:', err?.message)); });
+      } catch (e) { console.warn('[banners] sync falhou:', e?.message); }
+      return next;
+    });
+  };
   const [config, setConfigState] = useState(SITE_DEFAULT_CONFIG);
   // Carrega config do Supabase + polling de 10s pra propagar mudanças pra todos
   useEffect(() => {
@@ -1368,10 +1380,9 @@ function App() {
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
   const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
   const [adminTab, setAdminTab] = useState('dashboard'); 
-  const [zoomImage, setZoomImage] = useState(null);
+
   // Referência para o clique duplo
   const lastTapRef = useRef(0);
-
   useEffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) {
@@ -1384,11 +1395,16 @@ function App() {
     }
   }, []);
 
-  // products + leads vivem no Supabase. banners e config seguem no localStorage.
-  useEffect(() => { localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(banners)); }, [banners]);
+  // products + leads + banners + config vivem no Supabase.
+  // localStorage removido para evitar divergência entre dispositivos.
   // config agora vive no Supabase; nada pra persistir localmente
 
   const activeBanners = useMemo(() => (banners || []).filter(b => b.active), [banners]);
+  const availableCollections = useMemo(() => {
+    const set = new Set();
+    (banners || []).forEach(b => { if (b.collection_name) set.add(b.collection_name); });
+    return Array.from(set).sort();
+  }, [banners]);
   useEffect(() => {
     if (isAdmin || activeBanners.length <= 1) return;
     const timer = setInterval(() => { setCurrentBannerSlide((prev) => (prev + 1) % activeBanners.length); }, 5000);
@@ -1455,13 +1471,9 @@ function App() {
   const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
 
   const handleProductClick = (product) => {
-    if (product.stock <= 0) {
-        showToast('Esta peça está esgotada no momento.', 'error');
-        return;
-    }
-    setSelectedSizes({}); 
     setSelectedProduct(product);
-    trackPixel('ViewContent', { content_ids: [product.sku], content_name: product.name, value: product.price, currency: 'BRL' });
+    setActiveSize(null);
+    setShowProductModal(true);
   };
 
   const handleSizeSelect = (sizeName, maxStock) => {
@@ -1474,22 +1486,33 @@ function App() {
     });
   };
 
-  const handleCommitToCart = () => {
+  const handleAddToCartFromModal = () => {
+    if (!activeSize) {
+      showToast('Selecione um tamanho primeiro.', 'error');
+      return;
+    }
+    
+    const sizeName = activeSize.size || 'U';
+    const itemKey = `${selectedProduct.id}-${sizeName}`;
     let updatedCart = [...cart];
-    Object.entries(selectedSizes).forEach(([sizeName, qty]) => {
-       const itemKey = `${selectedProduct.id}-${sizeName || 'U'}`;
-       const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
-       if (existingIdx >= 0) { updatedCart[existingIdx].quantity += qty; } 
-       else { updatedCart.push({ ...selectedProduct, size: sizeName || 'U', quantity: qty, itemKey }); }
-    });
+    const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
+    
+    if (existingIdx >= 0) {
+      updatedCart[existingIdx].quantity += 1;
+    } else {
+      updatedCart.push({
+        ...selectedProduct,
+        size: sizeName,
+        quantity: 1,
+        itemKey
+      });
+    }
+    
     setCart(updatedCart);
     setCartBounce(true);
     setTimeout(() => setCartBounce(false), 400);
-
-    trackPixel('AddToCart', { content_ids: [selectedProduct.sku], content_name: selectedProduct.name, value: selectedProduct.price, currency: 'BRL' });
     showToast(`Adicionado à sacola!`);
-    setSelectedProduct(null); 
-    setSelectedSizes({});
+    setShowProductModal(false);
   };
 
   const handleFinalize = async () => {
@@ -1568,9 +1591,10 @@ function App() {
         const sStock = typeof s === 'string' ? (p.stock || 0) : Number(s.stock || 0);
         return sName === selectedSize && sStock > 0;
       }));
-      return matchesCat && matchesSearch && matchesSize;
+      const matchesCollection = !activeCollectionFilter || p.collection_name === activeCollectionFilter;
+      return matchesCat && matchesSearch && matchesSize && matchesCollection;
     });
-  }, [selectedCategory, searchQuery, selectedSize, products]);
+  }, [selectedCategory, searchQuery, selectedSize, products, activeCollectionFilter]);
 
   const availableSizes = useMemo(() => {
     const set = new Set();
@@ -1611,10 +1635,11 @@ function App() {
         <AdminHeader handleLogout={handleLogout} />
         <main className="max-w-md mx-auto">
           {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
-          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} />}
+          {adminTab === 'inventory' && <AdminInventory products={products} setProducts={setProducts} showToast={showToast} availableCollections={availableCollections} productImageFile={productImageFile} setProductImageFile={setProductImageFile} uploadImage={uploadImage} />}
           {adminTab === 'leads' && <AdminLeads leads={leads} setLeads={setLeads} products={products} setProducts={setProducts} showToast={showToast} config={config} />}
-          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} />}
+          {adminTab === 'banners' && <AdminBanners banners={banners} setBanners={setBanners} showToast={showToast} bannerImageFile={bannerImageFile} setBannerImageFile={setBannerImageFile} uploadImage={uploadImage} />}
           {adminTab === 'config' && <AdminConfig config={config} setConfig={setConfig} showToast={showToast} />}
+          {adminTab === 'rastreio' && <AdminRastreio />}
         </main>
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-zinc-900/95 backdrop-blur-xl px-4 py-4 rounded-3xl flex items-center justify-between shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 border border-white/10">
           <button onClick={() => setAdminTab('dashboard')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'dashboard' ? 'text-emerald-500' : 'text-zinc-500'}`}><LayoutDashboard size={18}/><span className="text-[8px] font-black uppercase">Painel</span></button>
@@ -1630,6 +1655,7 @@ function App() {
           </button>
           <button onClick={() => setAdminTab('banners')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'banners' ? 'text-emerald-500' : 'text-zinc-500'}`}><Megaphone size={18}/><span className="text-[8px] font-black uppercase">Promo</span></button>
           <button onClick={() => setAdminTab('config')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'config' ? 'text-emerald-500' : 'text-zinc-500'}`}><Settings size={18}/><span className="text-[8px] font-black uppercase">Setup</span></button>
+          <button onClick={() => setAdminTab('rastreio')} className={`flex flex-col items-center gap-1 transition-colors ${adminTab === 'rastreio' ? 'text-emerald-500' : 'text-zinc-500'}`}><Database size={18}/><span className="text-[8px] font-black uppercase">CAPI</span></button>
         </nav>
       </div>
     );
@@ -1677,12 +1703,29 @@ function App() {
           <div className="flex h-full transition-transform duration-700 ease-in-out" style={{ transform: `translateX(-${currentBannerSlide * 100}%)` }}>
             {activeBanners.map((banner, idx) => (
               <div key={idx} className="w-full h-full shrink-0 relative">
-                <img src={banner.image} className="w-full h-full object-cover opacity-80" alt="Banner" />
+                <img 
+                  src={banner.image} 
+                  className="w-full h-full object-cover opacity-80" 
+                  alt="Banner" 
+                  style={{ imageRendering: 'high-quality', WebkitOptimizeContrast: 'optimize-contrast' }}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent"></div>
                 <div className="absolute inset-x-0 bottom-0 p-8 flex flex-col items-center text-center animate-slide-up">
                   <h2 className="text-3xl font-black text-white uppercase tracking-tighter shadow-black drop-shadow-lg">{banner.title}</h2>
                   <p className="text-[11px] font-bold text-zinc-300 uppercase tracking-widest mt-2 mb-6 shadow-black drop-shadow-md">{banner.subtitle}</p>
-                  <button onClick={() => document.getElementById('search-input').focus()} className="bg-emerald-500 text-zinc-950 px-8 py-3.5 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.4)]">{banner.buttonText}</button>
+                  <button 
+                    onClick={() => {
+                      if (banner.collection_name) {
+                        setActiveCollectionFilter(banner.collection_name);
+                        document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        document.getElementById('search-input')?.focus();
+                      }
+                    }} 
+                    className="bg-emerald-500 text-zinc-950 px-8 py-3.5 rounded-full font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.4)]"
+                  >
+                    {banner.buttonText}
+                  </button>
                 </div>
               </div>
             ))}
@@ -1731,11 +1774,21 @@ function App() {
           <input id="search-input" placeholder="O que você procura?" data-testid="input-search" className="w-full bg-zinc-900/50 backdrop-blur-sm border border-white/5 py-4 pl-14 pr-6 rounded-2xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/50 shadow-inner client-input" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
         
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 mask-linear touch-pan-x">
+        <div id="catalog-section" className="flex gap-3 overflow-x-auto no-scrollbar pb-1 mask-linear touch-pan-x">
           {categories.map(cat => (
             <button key={cat} onClick={() => setSelectedCategory(cat)} data-testid={`category-filter-${cat}`} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedCategory === cat ? 'bg-white text-zinc-950 border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-transparent text-zinc-500 border-white/10 hover:border-white/30'}`}>{cat}</button>
           ))}
         </div>
+
+        {activeCollectionFilter && (
+          <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl animate-in">
+            <div className="flex flex-col">
+              <span className="text-[8px] font-black uppercase text-emerald-500 tracking-widest">Coleção Ativa</span>
+              <span className="text-xs font-black uppercase text-white">{activeCollectionFilter}</span>
+            </div>
+            <button onClick={() => setActiveCollectionFilter(null)} className="p-2 bg-emerald-500 text-zinc-950 rounded-xl active:scale-90 transition-transform"><X size={14}/></button>
+          </div>
+        )}
 
         {availableSizes.length > 1 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mask-linear touch-pan-x items-center">
@@ -1771,13 +1824,8 @@ function App() {
                    {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
-                   <div className="w-full h-full aspect-[3/4] relative bg-zinc-900 overflow-hidden rounded-lg">
-                     <img 
-                       src={product.image} 
-                       className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} 
-                       loading="lazy" 
-                       alt={product.name} 
-                     />
+                   <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
+                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
                      
                      {isOutOfStock && (
                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
@@ -1874,110 +1922,49 @@ function App() {
       )}
 
       {selectedProduct && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
-          
-          <div className="relative bg-zinc-950 w-full max-w-lg rounded-[48px] overflow-hidden animate-slide-up border border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh]">
-            
-            {/* Imagem de Alta Qualidade com Zoom Interno */}
-            <div className="w-full h-full aspect-[4/5] relative bg-zinc-900 overflow-hidden rounded-lg group">
-              <img 
-                src={selectedProduct.image} 
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 cursor-zoom-in" 
-                alt="Detalhe do produto" 
-                onClick={() => setZoomImage(selectedProduct.image)}
-              />
-              <div className="absolute top-6 left-6 flex gap-2">
-                <span className="bg-black/60 backdrop-blur-md text-[9px] font-black text-white px-3 py-1.5 rounded-full border border-white/10 uppercase tracking-widest">REF: {selectedProduct.sku}</span>
-              </div>
-              <button 
-                onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} 
-                className="absolute top-6 right-6 z-10 p-3 bg-black/60 backdrop-blur-md text-white rounded-full border border-white/10 active:scale-90 transition-transform"
-              >
-                <X size={20}/>
-              </button>
-              
-              {/* Overlay Informativo */}
-              <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent">
-                 <h2 className="text-2xl font-black text-white leading-tight uppercase italic tracking-tighter">{selectedProduct.name}</h2>
-                 <div className="flex items-center gap-3 mt-2">
-                   <p className="text-3xl font-black text-emerald-500 tracking-tighter">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
-                   {selectedProduct.stock <= 3 && <span className="bg-amber-500 text-zinc-950 text-[9px] font-black px-2 py-1 rounded-md animate-pulse">ÚLTIMAS PEÇAS</span>}
-                 </div>
+        <div className="fixed inset-0 z-[100] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
+          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] p-8 animate-slide-up border-t border-white/10 shadow-2xl pb-10">
+            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
+            <div className="flex gap-6 mb-8">
+              <img src={selectedProduct.image} className="w-28 h-36 rounded-[20px] object-cover shadow-2xl border border-white/10" alt="Produto" />
+              <div className="flex flex-col justify-center flex-1">
+                <span className="text-[8px] font-black text-zinc-500 uppercase bg-zinc-900 px-2 py-1 rounded-md tracking-widest self-start">REF: {selectedProduct.sku}</span>
+                <h2 className="text-lg font-black text-white leading-tight uppercase mt-1">{selectedProduct.name}</h2>
+                <p className="text-2xl font-black text-emerald-500 mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
               </div>
             </div>
-
-            {/* Conteúdo do Modal (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-8 pt-6 pb-32 space-y-8 custom-scrollbar">
-              
-              {/* Seleção de Tamanhos */}
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Escolha seu Tamanho</p>
-                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-1"><Info size={12}/> Guia de medidas</span>
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {(selectedProduct.sizes || []).map((s, idx) => {
-                    const sz = typeof s === 'string' ? s : s.size;
-                    const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
-                    const qty = selectedSizes[sz] || 0;
-                    const isSelected = qty > 0;
-                    
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
+              <div className="grid grid-cols-4 gap-2">
+                {(selectedProduct.sizes || []).map((s, idx) => {
+                  const sz = typeof s === 'string' ? s : s.size;
+                  const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
+                  const qty = selectedSizes[sz] || 0;
+                  if (qty > 0) {
                     return (
-                      <button 
-                        key={idx} 
-                        disabled={stock <= 0} 
-                        onClick={() => handleSizeSelect(sz, stock)} 
-                        className={`relative h-16 rounded-[20px] border font-black text-sm transition-all flex flex-col items-center justify-center gap-1 ${
-                          isSelected 
-                            ? 'bg-emerald-500 border-emerald-500 text-zinc-950 shadow-[0_0_25px_rgba(16,185,129,0.3)]' 
-                            : stock > 0 
-                              ? 'bg-zinc-900 border-white/5 text-zinc-400 hover:border-white/20 active:scale-95' 
-                              : 'bg-zinc-950/50 border-white/5 text-zinc-700 opacity-40 cursor-not-allowed'
-                        }`}
-                      >
-                        <span className={isSelected ? 'text-zinc-950' : ''}>{sz}</span>
-                        {stock > 0 && stock <= 2 && !isSelected && <span className="text-[8px] text-amber-500 font-bold uppercase">Pouco</span>}
-                        {isSelected && (
-                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-zinc-950 text-white rounded-full flex items-center justify-center text-[10px] border-2 border-emerald-500 font-black">
-                            {qty}
-                          </div>
-                        )}
-                      </button>
+                      <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
+                        <span className="text-xs font-black text-emerald-500">{sz}</span>
+                        <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
+                          <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
+                          <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
+                          <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
+                        </div>
+                      </div>
                     );
-                  })}
-                </div>
+                  }
+                  return (
+                    <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
+                  );
+                })}
               </div>
-
-              {/* Detalhes Adicionais */}
-              <div className="grid grid-cols-2 gap-4 opacity-50 pb-4">
-                 <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-white/5">
-                    <Truck size={16} className="text-zinc-400"/>
-                    <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Envio Rápido</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Todo Brasil</span></div>
-                 </div>
-                 <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-2xl border border-white/5">
-                    <ShieldCheck size={16} className="text-zinc-400"/>
-                    <div className="flex flex-col"><span className="text-[9px] font-black text-white uppercase">Qualidade</span><span className="text-[7px] font-bold text-zinc-500 uppercase">Premium</span></div>
-                 </div>
+              <div className="pt-6 mt-4 border-t border-white/5">
+                <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
+                  {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
+                </button>
               </div>
             </div>
-
-            {/* Botão de Ação Fixo no Rodapé do Modal */}
-            <div className="absolute bottom-0 inset-x-0 p-8 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent pt-12">
-              <button 
-                onClick={handleCommitToCart} 
-                disabled={Object.keys(selectedSizes).length === 0} 
-                className={`w-full py-6 rounded-[24px] font-black text-[13px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(0,0,0,0.5)] active:scale-[0.98] ${
-                  Object.keys(selectedSizes).length === 0 
-                    ? 'bg-zinc-900 text-zinc-600 border border-white/5 cursor-not-allowed' 
-                    : 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400'
-                }`}
-              >
-                {Object.keys(selectedSizes).length === 0 
-                  ? 'Escolha seu Tamanho' 
-                  : <>ADICIONAR AO CARRINHO <ShoppingBag size={20}/></>}
-              </button>
-            </div>
+            <button onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} className="absolute top-6 right-6 text-zinc-600 bg-zinc-900 rounded-full p-2 touch-manipulation"><X size={18}/></button>
           </div>
         </div>
       )}
@@ -2081,94 +2068,71 @@ function App() {
         </div>
       )}
 
-      {showMyOrders && (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="modal-my-orders">
-          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-5 shadow-2xl border border-white/10 animate-in relative overflow-hidden max-h-[90vh] flex flex-col">
-            <button onClick={() => { setShowMyOrders(false); setMyOrdersResults(null); setMyOrdersPhone(''); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation z-10" data-testid="btn-close-my-orders"><X size={16}/></button>
-            <div className="text-center space-y-2 shrink-0">
-              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20"><ClipboardList size={28}/></div>
-              <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Meus Pedidos</h3>
-              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Digite seu WhatsApp para consultar</p>
-            </div>
+	      {showMyOrders && (
+	        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6" data-testid="modal-my-orders">
+	          <div className="bg-zinc-950 w-full max-w-sm rounded-[32px] p-8 space-y-5 shadow-2xl border border-white/10 animate-in relative overflow-hidden max-h-[90vh] flex flex-col">
+	            <button onClick={() => { setShowMyOrders(false); setMyOrdersResults(null); setMyOrdersPhone(''); }} className="absolute top-5 right-5 text-zinc-500 bg-zinc-900 p-2 rounded-full touch-manipulation z-10" data-testid="btn-close-my-orders"><X size={16}/></button>
+	            <div className="text-center space-y-2 shrink-0">
+	              <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto border border-emerald-500/20"><ClipboardList size={28}/></div>
+	              <h3 className="text-2xl font-black uppercase text-white tracking-tighter">Meus Pedidos</h3>
+	              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Digite seu WhatsApp para consultar</p>
+	            </div>
 
-            <div className="flex gap-2 shrink-0">
-              <input
-                placeholder="Ex: 34999999999"
-                type="tel"
-                className="flex-1 p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/30 client-input"
-                value={myOrdersPhone}
-                onChange={(e) => setMyOrdersPhone(e.target.value.replace(/\D/g, ''))}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMyOrders(); }}
-                data-testid="input-my-orders-phone"
-              />
-              <button onClick={handleSearchMyOrders} disabled={myOrdersLoading} className="px-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 disabled:opacity-50" data-testid="btn-search-my-orders">
-                {myOrdersLoading ? '...' : 'Buscar'}
-              </button>
-            </div>
+	            <div className="flex gap-2 shrink-0">
+	              <input
+	                placeholder="Ex: 34999999999"
+	                type="tel"
+	                className="flex-1 p-4 bg-zinc-900 border border-white/5 rounded-xl text-[16px] font-bold text-white outline-none focus:border-emerald-500/30 client-input"
+	                value={myOrdersPhone}
+	                onChange={(e) => setMyOrdersPhone(e.target.value.replace(/\D/g, ''))}
+	                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMyOrders(); }}
+	                data-testid="input-my-orders-phone"
+	              />
+	              <button onClick={handleSearchMyOrders} disabled={myOrdersLoading} className="px-5 bg-emerald-500 text-zinc-950 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 disabled:opacity-50" data-testid="btn-search-my-orders">
+	                {myOrdersLoading ? '...' : 'Buscar'}
+	              </button>
+	            </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 -mx-2 px-2">
-              {myOrdersResults === null ? (
-                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Informe seu número acima</div>
-              ) : myOrdersResults.length === 0 ? (
-                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Nenhum pedido encontrado para este número</div>
-              ) : (
-                myOrdersResults.map((row) => {
-                  const its = typeof row.items === 'string' ? (() => { try { return JSON.parse(row.items); } catch { return []; } })() : (row.items || []);
-                  const st = String(row.status || 'NOVO').toUpperCase();
-                  const stMap = { 'CONFIRMED': 'CONCLUÍDO', 'CONCLUIDO': 'CONCLUÍDO', 'CANCELLED': 'CANCELADO' };
-                  const status = stMap[st] || st;
-                  const color = status === 'CONCLUÍDO' ? 'text-emerald-500 bg-emerald-500/10' : status === 'CANCELADO' ? 'text-red-500 bg-red-500/10' : status === 'EM ATENDIMENTO' ? 'text-amber-500 bg-amber-500/10' : 'text-blue-500 bg-blue-500/10';
-                  return (
-                    <div key={row.id} className="bg-zinc-900 rounded-2xl p-4 border border-white/5" data-testid={`my-order-${row.order_number}`}>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-black uppercase text-white">#{row.order_number}</span>
-                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${color}`}>{status}</span>
-                      </div>
-                      <div className="text-[9px] text-zinc-500 font-bold uppercase mb-2">{row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : ''}</div>
-                      <div className="space-y-1">
-                        {(its || []).map((it, i) => (
-                          <div key={i} className="text-[10px] text-zinc-300 font-bold flex justify-between">
-                            <span className="truncate pr-2">{it.qty || 1}x {it.name} <span className="text-emerald-500">({it.size || 'U'})</span></span>
-                            <span className="text-zinc-500 shrink-0">R$ {Number(it.price || 0).toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
-                        <span className="text-[9px] text-zinc-500 font-black uppercase">Total</span>
-                        <span className="text-[13px] font-black text-emerald-500">R$ {Number(row.value || 0).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+	            <div className="flex-1 overflow-y-auto space-y-3 -mx-2 px-2">
+	              {myOrdersResults === null ? (
+	                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Informe seu número acima</div>
+	              ) : myOrdersResults.length === 0 ? (
+	                <div className="text-center py-8 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">Nenhum pedido encontrado para este número</div>
+	              ) : (
+	                myOrdersResults.map((row) => {
+	                  const its = typeof row.items === 'string' ? (() => { try { return JSON.parse(row.items); } catch { return []; } })() : (row.items || []);
+	                  const st = String(row.status || 'NOVO').toUpperCase();
+	                  const stMap = { 'CONFIRMED': 'CONCLUÍDO', 'CONCLUIDO': 'CONCLUÍDO', 'CANCELLED': 'CANCELADO' };
+	                  const status = stMap[st] || st;
+	                  const color = status === 'CONCLUÍDO' ? 'text-emerald-500 bg-emerald-500/10' : status === 'CANCELADO' ? 'text-red-500 bg-red-500/10' : status === 'EM ATENDIMENTO' ? 'text-amber-500 bg-amber-500/10' : 'text-blue-500 bg-blue-500/10';
+	                  return (
+	                    <div key={row.id} className="bg-zinc-900 rounded-2xl p-4 border border-white/5" data-testid={`my-order-${row.order_number}`}>
+	                      <div className="flex justify-between items-center mb-2">
+	                        <span className="text-[10px] font-black uppercase text-white">#{row.order_number}</span>
+	                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${color}`}>{status}</span>
+	                      </div>
+	                      <div className="text-[9px] text-zinc-500 font-bold uppercase mb-2">{row.created_at ? new Date(row.created_at).toLocaleString('pt-BR') : ''}</div>
+	                      <div className="space-y-1">
+	                        {(its || []).map((it, i) => (
+	                          <div key={i} className="text-[10px] text-zinc-300 font-bold flex justify-between">
+	                            <span className="truncate pr-2">{it.qty || 1}x {it.name} <span className="text-emerald-500">({it.size || 'U'})</span></span>
+	                            <span className="text-zinc-500 shrink-0">R$ {Number(it.price || 0).toFixed(2)}</span>
+	                          </div>
+	                        ))}
+	                      </div>
+	                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
+	                        <span className="text-[9px] text-zinc-500 font-black uppercase">Total</span>
+	                        <span className="text-[13px] font-black text-emerald-500">R$ {Number(row.value || 0).toFixed(2)}</span>
+	                      </div>
+	                    </div>
+	                  );
+	                })
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      )}
 
-      {zoomImage && (
-        <div className="fixed inset-0 z-[500] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-4 animate-in">
-          <div className="relative w-full max-w-2xl h-full flex flex-col items-center justify-center">
-            <button 
-              onClick={() => setZoomImage(null)} 
-              className="absolute top-4 right-4 z-[510] bg-zinc-900/80 text-white p-4 rounded-full shadow-2xl backdrop-blur-md border border-white/10 active:scale-90 transition-transform"
-            >
-              <X size={24}/>
-            </button>
-            <img 
-              src={zoomImage} 
-              className="w-full h-auto max-h-[80vh] object-contain rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/5" 
-              alt="Zoomed product" 
-            />
-            <button 
-              onClick={() => setZoomImage(null)} 
-              className="mt-10 px-12 py-5 bg-white text-zinc-950 rounded-full font-black uppercase text-xs tracking-[0.2em] shadow-2xl active:scale-95 transition-transform"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -2241,3 +2205,4 @@ function App() {
 }
 
 export default App;
+// Force redeploy Thu Apr 23 13:43:02 EDT 2026
