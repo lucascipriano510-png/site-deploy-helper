@@ -747,6 +747,15 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
           });
           setProducts(updatedProducts);
         }
+
+        // [CAPI] Dispara Purchase para a Meta (fire-and-forget) só na 1ª conclusão
+        if (oldStatus !== 'CONCLUÍDO') {
+          dispatchCAPIPurchase({
+            phone: leadToUpdate.phone,
+            value: leadToUpdate.value,
+          }).catch(() => {});
+        }
+
         showToast('Venda concluída!');
       } else if (newStatus === 'CANCELADO') {
         await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
