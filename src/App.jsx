@@ -1413,6 +1413,8 @@ function App() {
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [bannerImageFile, setBannerImageFile] = useState(null);
   const [currentLead, setCurrentLead] = useState({ name: '', phone: '' });
   const [toast, setToast] = useState(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -1512,9 +1514,9 @@ function App() {
   const subtotal = useMemo(() => (cart || []).reduce((acc, item) => acc + (item.price * item.quantity), 0), [cart]);
 
   const handleProductClick = (product) => {
+    if (!product || product.stock <= 0) return;
     setSelectedProduct(product);
-    setActiveSize(null);
-    setShowProductModal(true);
+    setSelectedSizes({});
   };
 
   const handleSizeSelect = (sizeName, maxStock) => {
@@ -1527,33 +1529,40 @@ function App() {
     });
   };
 
-  const handleAddToCartFromModal = () => {
-    if (!activeSize) {
-      showToast('Selecione um tamanho primeiro.', 'error');
+  const handleCommitToCart = () => {
+    if (!selectedProduct) return;
+    const entries = Object.entries(selectedSizes || {}).filter(([, qty]) => Number(qty) > 0);
+    if (entries.length === 0) {
+      showToast('Escolha um tamanho primeiro.', 'error');
       return;
     }
-    
-    const sizeName = activeSize.size || 'U';
-    const itemKey = `${selectedProduct.id}-${sizeName}`;
+
     let updatedCart = [...cart];
-    const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
-    
-    if (existingIdx >= 0) {
-      updatedCart[existingIdx].quantity += 1;
-    } else {
-      updatedCart.push({
-        ...selectedProduct,
-        size: sizeName,
-        quantity: 1,
-        itemKey
-      });
-    }
+    entries.forEach(([sizeName, qty]) => {
+      const quantity = Number(qty) || 1;
+      const itemKey = `${selectedProduct.id}-${sizeName || 'U'}`;
+      const existingIdx = updatedCart.findIndex(item => item.itemKey === itemKey);
+      if (existingIdx >= 0) {
+        updatedCart[existingIdx] = {
+          ...updatedCart[existingIdx],
+          quantity: updatedCart[existingIdx].quantity + quantity,
+        };
+      } else {
+        updatedCart.push({
+          ...selectedProduct,
+          size: sizeName || 'U',
+          quantity,
+          itemKey,
+        });
+      }
+    });
     
     setCart(updatedCart);
     setCartBounce(true);
     setTimeout(() => setCartBounce(false), 400);
     showToast(`Adicionado à sacola!`);
-    setShowProductModal(false);
+    setSelectedProduct(null);
+    setSelectedSizes({});
   };
 
   const handleFinalize = async () => {
