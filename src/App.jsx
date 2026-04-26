@@ -811,6 +811,12 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
         showToast('Pedido cancelado.');
+        // 🔴 CAPI — fire-and-forget: dispara estorno (type: 'cancel') para a Meta
+        dispatchCAPIPurchase({
+          phone: leadToUpdate.phone,
+          value: leadToUpdate.value,
+          type: 'cancel',
+        }).catch(() => {});
       } else {
         // Outros status (NOVO, EM ATENDIMENTO) — persiste no Supabase
         await updateOrderStatus(leadToUpdate._raw?.id || leadToUpdate.id, newStatus);
