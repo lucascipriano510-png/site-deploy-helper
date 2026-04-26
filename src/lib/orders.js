@@ -115,3 +115,17 @@ export async function deleteOrder(orderId) {
   const { error } = await supabase.from('orders').delete().eq('id', orderId);
   if (error) throw error;
 }
+
+// Atualiza o telefone de um pedido (correção de número errado para CAPI)
+export async function updateOrderPhone(orderId, phone) {
+  const cleaned = String(phone || '').replace(/\D/g, '');
+  if (cleaned.length < 10) throw new Error('Telefone inválido');
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ phone: cleaned })
+    .eq('id', orderId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
