@@ -766,8 +766,32 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
 const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config }) => {
   const [expandedLead, setExpandedLead] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [editingPhoneId, setEditingPhoneId] = useState(null);
+  const [editingPhoneValue, setEditingPhoneValue] = useState('');
   // Filtro: 'NOVOS' = NOVO + EM ATENDIMENTO; 'CONCLUÍDOS' e 'CANCELADOS' ficam separados
   const [leadsFilter, setLeadsFilter] = useState('NOVOS');
+
+  const openPhoneEditor = (lead) => {
+    setEditingPhoneId(lead.id);
+    setEditingPhoneValue(String(lead.phone || ''));
+  };
+
+  const savePhoneEdit = async () => {
+    const lead = leads.find(l => l.id === editingPhoneId);
+    if (!lead) { setEditingPhoneId(null); return; }
+    const cleaned = editingPhoneValue.replace(/\D/g, '');
+    if (cleaned.length < 10) { showToast('Telefone inválido (mín. 10 dígitos com DDD).', 'error'); return; }
+    try {
+      await updateOrderPhone(lead._raw?.id || lead.id, cleaned);
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, phone: cleaned } : l));
+      showToast('Telefone atualizado!');
+      setEditingPhoneId(null);
+    } catch (err) {
+      console.log('[PHONE_EDIT_ERROR]', err);
+      showToast('Erro ao atualizar telefone.', 'error');
+    }
+  };
+
   const updateLeadStatus = async (id, newStatus) => {
     const leadToUpdate = leads.find(l => l.id === id);
     if (!leadToUpdate) return;
@@ -915,9 +939,40 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
               <span className={`text-[8px] font-black uppercase ${statusColors[lead.status || 'NOVO']}`}>{lead.status || 'NOVO'}</span>
             </div>
             <div className="flex justify-between items-center text-[11px] font-bold text-zinc-400">
-              <span>{lead.phone}</span>
+              {editingPhoneId === lead.id ? (
+                <div className="flex items-center gap-1.5 flex-1 mr-2" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="tel"
+                    autoFocus
+                    value={editingPhoneValue}
+                    onChange={(e) => setEditingPhoneValue(e.target.value.replace(/\D/g, ''))}
+                    placeholder="DDD + número"
+                    className="flex-1 min-w-0 px-2 py-1 bg-zinc-950 border border-emerald-500/30 rounded-md text-[11px] font-bold text-white outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    onClick={savePhoneEdit}
+                    className="px-2 py-1 bg-emerald-500 text-zinc-950 rounded-md text-[9px] font-black uppercase active:scale-95"
+                  >OK</button>
+                  <button
+                    onClick={() => setEditingPhoneId(null)}
+                    className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded-md text-[9px] font-black uppercase active:scale-95"
+                  >X</button>
+                </div>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <span>{lead.phone}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openPhoneEditor(lead); }}
+                    className="p-1 text-zinc-500 hover:text-emerald-500 active:scale-90 transition-colors"
+                    title="Editar telefone"
+                  >
+                    <Edit3 size={11}/>
+                  </button>
+                </span>
+              )}
               <span className="text-emerald-500">R$ {(lead.value || 0).toFixed(2)}</span>
             </div>
+
           </div>
           {expandedLead === lead.id && (
             <div className="bg-zinc-950/50 p-6 border-t border-white/5 animate-slide-down space-y-4">
