@@ -19,14 +19,15 @@ const WEBHOOK_SECRET =
  * Dispara o evento Purchase para a Meta via Edge Function.
  * Não lança erros — apenas loga no console.
  *
- * @param {{ phone: string|number, value: number }} payload
+ * @param {{ phone: string|number, value: number, type?: 'purchase'|'cancel' }} payload
  */
-export async function dispatchCAPIPurchase({ phone, value }) {
+export async function dispatchCAPIPurchase({ phone, value, type = 'purchase' }) {
   try {
     const url = `${SUPABASE_URL}/functions/v1/webhook-meta`;
     const body = JSON.stringify({
       phone: String(phone || ''),
       value: Number(value || 0),
+      type,
     });
 
     // Tenta anexar o JWT do usuário logado (modo "app autenticado"),
