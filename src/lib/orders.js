@@ -99,6 +99,36 @@ export async function cancelOrder(orderId) {
   return data;
 }
 
+// Devolve o estoque ao cancelar uma venda que JÁ FOI CONCLUÍDA.
+// Espelha confirmOrderSale: soma stock de volta e abate sales.
+// Use SOMENTE quando oldStatus === 'CONCLUÍDO' e newStatus === 'CANCELADO'.
+export async function restoreOrderStock(order, products) {
+  for (const item of order.items || []) {
+    const product = products.find(p => p.id === item.id);
+    if (!product) continue;
+
+    const qty = Number(item.qty || item.quantity || 1);
+    const newStock = Number(product.stock || 0) + qty;
+    const newSales = Math.max(0, Number(product.sales || 0) - qty);
+
+    let newSizes = product.sizes || [];
+    if (item.size && Array.isArray(newSizes)) {
+      newSizes = newSizes.map(s => {
+        const sName = typeof s === 'string' ? s : s.size;
+        const sStock = typeof s === 'string' ? Number(product.stock || 0) : Number(s.stock || 0);
+        if (sName !== item.size) return typeof s === 'string' ? { size: sName, stock: sStock } : s;
+        return { ...(typeof s === 'string' ? { size: sName } : s), size: sName, stock: sStock + qty };
+      });
+    }
+
+    const { error: upErr } = await supabase
+      .from('products')
+      .update({ stock: newStock, sales: newSales, sizes: newSizes })
+      .eq('id', product.id);
+    if (upErr) throw upErr;
+  }
+}
+
 // Atualiza status genérico (ex: EM ATENDIMENTO)
 export async function updateOrderStatus(orderId, status) {
   const { data, error } = await supabase
