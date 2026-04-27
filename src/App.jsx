@@ -833,8 +833,42 @@ const AdminLeads = ({ leads, setLeads, products, setProducts, showToast, config 
         }).catch(() => {});
       } else if (newStatus === 'CANCELADO') {
         await cancelOrder(leadToUpdate._raw?.id || leadToUpdate.id);
+
+        // 🔄 Devolve estoque SOMENTE se a venda já tinha sido CONCLUÍDA (estoque já baixou).
+        // Em qualquer outro status anterior (NOVO, EM ATENDIMENTO) o estoque nunca foi mexido.
+        if (oldStatus === 'CONCLUÍDO') {
+          const orderForRestore = {
+            id: leadToUpdate._raw?.id || leadToUpdate.id,
+            items: (leadToUpdate.items || []).map(i => ({
+              id: i.id, size: i.size, qty: i.qty || i.quantity || 1,
+            })),
+          };
+          try {
+            await restoreOrderStock(orderForRestore, products);
+            // Reflete na UI imediatamente (polling re-sincroniza depois)
+            const restoredProducts = products.map(p => {
+              const itemsForP = (orderForRestore.items || []).filter(it => it.id === p.id);
+              if (itemsForP.length === 0) return p;
+              const totalQty = itemsForP.reduce((a, c) => a + Number(c.qty || 0), 0);
+              const newSizes = (p.sizes || []).map(s => {
+                const sName = typeof s === 'string' ? s : (s.size || 'U');
+                const sStock = typeof s === 'string' ? (p.stock || 0) : (s.stock || 0);
+                const inc = itemsForP.filter(i => i.size === sName).reduce((a, c) => a + Number(c.qty || 0), 0);
+                return { size: sName, stock: sStock + inc };
+              });
+              return { ...p, sizes: newSizes, stock: (p.stock || 0) + totalQty, sales: Math.max(0, (p.sales || 0) - totalQty) };
+            });
+            setProducts(restoredProducts);
+            showToast('Pedido cancelado e estoque devolvido.');
+          } catch (restoreErr) {
+            console.log('[STOCK_RESTORE_ERROR]', restoreErr);
+            showToast('Pedido cancelado, mas houve erro ao devolver estoque.', 'error');
+          }
+        } else {
+          showToast('Pedido cancelado.');
+        }
+
         setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'CANCELADO' } : l));
-        showToast('Pedido cancelado.');
         // 🔴 CAPI — fire-and-forget: dispara estorno (type: 'cancel') para a Meta
         dispatchCAPIPurchase({
           phone: leadToUpdate.phone,
