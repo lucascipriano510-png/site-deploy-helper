@@ -42,7 +42,20 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     detectSessionInUrl: false,
     storage: safeStorage,
-    storageKey: 'fluxo-admin-auth',
-    flowType: 'pkce',
+    // Mantemos a storageKey padrão do Supabase para não invalidar sessões
+    // que já existiam antes desta configuração explícita.
   },
 })
+
+// Debug: mostra no console se uma sessão foi restaurada do storage.
+if (typeof window !== 'undefined') {
+  supabase.auth.getSession().then(({ data, error }) => {
+    if (error) {
+      console.warn('[auth] erro ao restaurar sessão:', error.message);
+    } else if (data?.session?.user) {
+      console.log('[auth] sessão restaurada para', data.session.user.email);
+    } else {
+      console.log('[auth] nenhuma sessão salva (login necessário)');
+    }
+  });
+}
