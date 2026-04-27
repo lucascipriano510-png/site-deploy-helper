@@ -14,7 +14,7 @@ import {
   GripVertical, Instagram, ShieldQuestion, Globe, HelpCircle, ScanLine, Scan
 } from 'lucide-react';
 import { fetchProducts, upsertProduct, deleteProduct as deleteProductRemote, fetchBanners, upsertBanner, deleteBanner as deleteBannerRemote, uploadImage } from './lib/supabase';
-import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus, updateOrderPhone } from './lib/orders';
+import { createOrder, fetchOrders, confirmOrderSale, cancelOrder, deleteOrder as deleteOrderRemote, updateOrderStatus, updateOrderPhone, restoreOrderStock } from './lib/orders';
 import { supabase } from './lib/supabaseClient';
 import { fetchSiteConfig, upsertSiteConfig, DEFAULT_CONFIG as SITE_DEFAULT_CONFIG } from './lib/siteConfig';
 import { dispatchCAPIPurchase } from './lib/capi';
