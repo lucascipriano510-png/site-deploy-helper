@@ -1471,6 +1471,7 @@ function App() {
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSizes, setSelectedSizes] = useState({});
+  const [zoomImage, setZoomImage] = useState(null);
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
