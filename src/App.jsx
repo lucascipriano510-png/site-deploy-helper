@@ -1471,6 +1471,7 @@ function App() {
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSizes, setSelectedSizes] = useState({});
+  const [zoomImage, setZoomImage] = useState(null);
   const [showCart, setShowCart] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -2036,48 +2037,101 @@ function App() {
 
       {selectedProduct && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
-          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] p-8 animate-slide-up border-t border-white/10 shadow-2xl pb-10">
-            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-            <div className="flex gap-6 mb-8">
-              <img src={selectedProduct.image} className="w-28 h-36 rounded-[20px] object-cover shadow-2xl border border-white/10" alt="Produto" />
-              <div className="flex flex-col justify-center flex-1">
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} />
+          <div className="relative bg-zinc-950 w-full max-w-md rounded-t-[40px] animate-slide-up border-t border-white/10 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+            {/* HERO IMAGE — grande, clicável para zoom */}
+            <div className="relative w-full bg-gradient-to-b from-zinc-900 to-zinc-950">
+              <button
+                onClick={() => setZoomImage(selectedProduct.image)}
+                className="block w-full aspect-square overflow-hidden touch-manipulation group"
+                aria-label="Ampliar foto"
+              >
+                <img
+                  src={selectedProduct.image}
+                  className="w-full h-full object-cover transition-transform duration-500 group-active:scale-105"
+                  alt={selectedProduct.name}
+                />
+              </button>
+              {/* Drag handle flutuante */}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/30 rounded-full backdrop-blur-md" />
+              {/* Botão fechar flutuante */}
+              <button
+                onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }}
+                className="absolute top-4 right-4 text-white bg-black/50 backdrop-blur-md rounded-full p-2.5 touch-manipulation border border-white/10 active:scale-90 transition-transform"
+              >
+                <X size={18}/>
+              </button>
+              {/* Hint de zoom */}
+              <div className="absolute bottom-4 right-4 text-[9px] font-black text-white bg-black/60 backdrop-blur-md rounded-full px-3 py-1.5 uppercase tracking-widest border border-white/10 flex items-center gap-1.5 pointer-events-none">
+                <Search size={10}/> Toque para ampliar
+              </div>
+              {/* Fade na base para emendar com conteúdo */}
+              <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-b from-transparent to-zinc-950 pointer-events-none" />
+            </div>
+
+            {/* CONTEÚDO scrollável */}
+            <div className="flex-1 overflow-y-auto px-7 pt-5 pb-8">
+              <div className="flex flex-col gap-1 mb-6">
                 <span className="text-[8px] font-black text-zinc-500 uppercase bg-zinc-900 px-2 py-1 rounded-md tracking-widest self-start">REF: {selectedProduct.sku}</span>
-                <h2 className="text-lg font-black text-white leading-tight uppercase mt-1">{selectedProduct.name}</h2>
-                <p className="text-2xl font-black text-emerald-500 mt-2">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
+                <h2 className="text-2xl font-black text-white leading-tight uppercase mt-2 tracking-tight">{selectedProduct.name}</h2>
+                <p className="text-3xl font-black text-emerald-500 mt-2 tracking-tighter">R$ {(selectedProduct.price || 0).toFixed(2)}</p>
               </div>
-            </div>
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
-              <div className="grid grid-cols-4 gap-2">
-                {(selectedProduct.sizes || []).map((s, idx) => {
-                  const sz = typeof s === 'string' ? s : s.size;
-                  const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
-                  const qty = selectedSizes[sz] || 0;
-                  if (qty > 0) {
-                    return (
-                      <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
-                        <span className="text-xs font-black text-emerald-500">{sz}</span>
-                        <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
-                          <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
-                          <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
-                          <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
+              <div className="space-y-4">
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Selecione o Tamanho</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {(selectedProduct.sizes || []).map((s, idx) => {
+                    const sz = typeof s === 'string' ? s : s.size;
+                    const stock = typeof s === 'string' ? selectedProduct.stock : s.stock;
+                    const qty = selectedSizes[sz] || 0;
+                    if (qty > 0) {
+                      return (
+                        <div key={idx} className="py-2.5 rounded-xl border border-emerald-500 bg-emerald-500/10 flex flex-col items-center justify-center gap-1.5 shadow-inner">
+                          <span className="text-xs font-black text-emerald-500">{sz}</span>
+                          <div className="flex items-center gap-2 bg-zinc-950 rounded-md px-1 py-1 border border-emerald-500/20">
+                            <button onClick={() => { const n = {...selectedSizes}; if(n[sz]>1) n[sz]--; else delete n[sz]; setSelectedSizes(n); }} className="text-zinc-400 touch-manipulation"><Minus size={10}/></button>
+                            <span className="text-[10px] font-black text-white w-3 text-center">{qty}</span>
+                            <button onClick={() => handleSizeSelect(sz, stock)} className="text-zinc-400 touch-manipulation"><Plus size={10}/></button>
+                          </div>
                         </div>
-                      </div>
+                      );
+                    }
+                    return (
+                      <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
                     );
-                  }
-                  return (
-                    <button key={idx} disabled={stock <= 0} onClick={() => handleSizeSelect(sz, stock)} className={`py-3 rounded-xl border font-black text-sm transition-all touch-manipulation ${stock > 0 ? 'bg-zinc-900 border-white/5 text-zinc-300 active:scale-95' : 'bg-zinc-950/50 border-white/5 text-zinc-600 opacity-50'}`}>{sz}</button>
-                  );
-                })}
-              </div>
-              <div className="pt-6 mt-4 border-t border-white/5">
-                <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
-                  {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
-                </button>
+                  })}
+                </div>
+                <div className="pt-6 mt-4 border-t border-white/5">
+                  <button onClick={handleCommitToCart} disabled={Object.keys(selectedSizes).length === 0} className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 touch-manipulation ${Object.keys(selectedSizes).length === 0 ? 'bg-zinc-900 text-zinc-700' : 'bg-emerald-500 text-zinc-950 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
+                    {Object.keys(selectedSizes).length === 0 ? 'Escolha um Tamanho' : `Adicionar à Sacola (${Object.values(selectedSizes).reduce((a,b)=>a+b,0)})`} <ShoppingBag size={14}/>
+                  </button>
+                </div>
               </div>
             </div>
-            <button onClick={() => { setSelectedProduct(null); setSelectedSizes({}); }} className="absolute top-6 right-6 text-zinc-600 bg-zinc-900 rounded-full p-2 touch-manipulation"><X size={18}/></button>
+          </div>
+        </div>
+      )}
+
+      {/* LIGHTBOX — Zoom em tela cheia */}
+      {zoomImage && (
+        <div
+          className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-xl flex items-center justify-center animate-in p-4"
+          onClick={() => setZoomImage(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setZoomImage(null); }}
+            className="absolute top-6 right-6 text-white bg-white/10 backdrop-blur-md rounded-full p-3 touch-manipulation border border-white/20 active:scale-90 transition-transform z-10"
+            aria-label="Fechar"
+          >
+            <X size={20}/>
+          </button>
+          <img
+            src={zoomImage}
+            alt="Visualização ampliada"
+            className="max-w-full max-h-full object-contain rounded-3xl shadow-[0_20px_80px_rgba(0,0,0,0.6)] animate-in"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-[9px] font-black text-white/60 uppercase tracking-widest">
+            Toque fora para fechar
           </div>
         </div>
       )}
