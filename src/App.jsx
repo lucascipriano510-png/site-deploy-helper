@@ -1568,6 +1568,15 @@ function App() {
     e.preventDefault();
     const now = Date.now();
     if (now - lastTapRef.current < 400) {
+      // Se a sessão ainda está sendo restaurada do storage, espera —
+      // evita pedir login quando o usuário já está autenticado.
+      if (!authReady) {
+        showToast('Verificando sessão...', 'success');
+        return;
+      }
+      // Se já estiver logado, nem mostra modal — o app já vai renderizar
+      // o painel admin automaticamente (isAdmin === true).
+      if (isAdmin) return;
       setShowAdminLogin(true);
     }
     lastTapRef.current = now;
