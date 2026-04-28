@@ -116,7 +116,7 @@ const trackPixel = (eventName, payload) => {
 // 3. COMPONENTES ADMIN DESACOPLADOS
 // ==========================================
 
-const AdminHeader = ({ handleLogout }) => (
+const AdminHeader = ({ handleLogout, handleBackToStore }) => (
   <div className="bg-zinc-950 text-white px-6 py-6 flex justify-between items-center sticky top-0 z-50 border-b border-white/5">
     <div className="flex items-center gap-3">
       <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] relative overflow-hidden">
@@ -128,9 +128,14 @@ const AdminHeader = ({ handleLogout }) => (
         <p className="text-[9px] font-bold text-zinc-500 tracking-[0.2em] uppercase flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Operacional</p>
       </div>
     </div>
-    <button onClick={handleLogout} className="px-4 py-2 bg-white text-zinc-950 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
-      Sair <LogOut size={12} />
-    </button>
+    <div className="flex items-center gap-2">
+      <button onClick={handleBackToStore} title="Voltar para a loja sem deslogar" className="px-3 py-2 bg-white/5 border border-white/10 text-white rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-white/10 transition-colors flex items-center gap-2" data-testid="admin-back-to-store">
+        <ArrowLeft size={12} /> Loja
+      </button>
+      <button onClick={handleLogout} className="px-4 py-2 bg-white text-zinc-950 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+        Sair <LogOut size={12} />
+      </button>
+    </div>
   </div>
 );
 
@@ -1499,7 +1504,13 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSize, setSelectedSize] = useState('TODOS');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(() => {
+    // Restaura a página a partir da URL (?page=N) — sobrevive ao reload.
+    if (typeof window === 'undefined') return 1;
+    const sp = new URLSearchParams(window.location.search);
+    const n = parseInt(sp.get('page') || '1', 10);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  });
   const PRODUCTS_PER_PAGE = 20;
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [myOrdersPhone, setMyOrdersPhone] = useState('');
@@ -1612,14 +1623,14 @@ function App() {
     }
   };
 
-  // "Sair" do painel: apenas volta para a aba do cliente, mantendo a sessão
-  // salva no dispositivo. Para deslogar de verdade use handleFullLogout.
-  const handleLogout = () => {
+  // "Loja": volta para a aba do cliente sem encerrar a sessão admin.
+  // Ao clicar 2x no cadeado depois, entra direto sem pedir senha.
+  const handleBackToStore = () => {
     setIsAdmin(false);
   };
 
-  // Logout real (encerra a sessão no Supabase). Disponível caso precise.
-  const handleFullLogout = async () => {
+  // "Sair": encerra a sessão de verdade no Supabase (próximo acesso pedirá login).
+  const handleLogout = async () => {
     try { await supabase.auth.signOut(); } catch (e) {}
     setIsAdmin(false);
   };
@@ -1770,6 +1781,15 @@ function App() {
   useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchQuery, selectedSize, activeCollectionFilter]);
   // Se a página atual ficar fora do range (ex.: filtro reduziu lista), corrige.
   useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [totalPages, currentPage]);
+  // Espelha a página atual na URL (?page=N) para sobreviver a recargas.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    if (currentPage <= 1) sp.delete('page'); else sp.set('page', String(currentPage));
+    const qs = sp.toString();
+    const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }, [currentPage]);
 
   const availableSizes = useMemo(() => {
     const set = new Set();
@@ -1807,7 +1827,7 @@ function App() {
   if (isAdmin) {
     return (
       <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-20 selection:bg-emerald-500 selection:text-zinc-950">
-        <AdminHeader handleLogout={handleLogout} />
+        <AdminHeader handleLogout={handleLogout} handleBackToStore={handleBackToStore} />
         <main className="max-w-md mx-auto">
           <AdminTabErrorBoundary resetKey={adminTab}>
             {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
@@ -2027,7 +2047,7 @@ function App() {
            {totalPages > 1 && (
              <div className="flex items-center justify-between gap-3 pt-8 pb-2 animate-in" data-testid="pagination-controls">
                <button
-                 onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })); }}
                  disabled={currentPage <= 1}
                  className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
                  data-testid="pagination-prev"
@@ -2038,7 +2058,7 @@ function App() {
                  <span className="text-white">{currentPage}</span> <span className="text-zinc-600">/</span> {totalPages}
                </div>
                <button
-                 onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })); }}
                  disabled={currentPage >= totalPages}
                  className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
                  data-testid="pagination-next"
