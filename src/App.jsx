@@ -2047,7 +2047,7 @@ function App() {
            {totalPages > 1 && (
              <div className="flex items-center justify-between gap-3 pt-8 pb-2 animate-in" data-testid="pagination-controls">
                <button
-                 onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })); }}
                  disabled={currentPage <= 1}
                  className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
                  data-testid="pagination-prev"
