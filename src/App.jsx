@@ -1577,7 +1577,7 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleSecretDoubleTap = (e) => {
+  const handleSecretDoubleTap = async (e) => {
     e.preventDefault();
     const now = Date.now();
     if (now - lastTapRef.current < 400) {
@@ -1587,9 +1587,21 @@ function App() {
         showToast('Verificando sessão...', 'success');
         return;
       }
-      // Se já estiver logado, nem mostra modal — o app já vai renderizar
-      // o painel admin automaticamente (isAdmin === true).
+      // Se voltou para a loja sem deslogar, o estado visual fica como cliente,
+      // mas a sessão continua salva. Revalida antes de pedir senha.
       if (isAdmin) return;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const logged = !!data?.session?.user;
+        if (logged) {
+          setIsAdmin(true);
+          isAdminRef.current = true;
+          setShowAdminLogin(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('[auth] restauração da sessão falhou:', err?.message);
+      }
       setShowAdminLogin(true);
     }
     lastTapRef.current = now;
