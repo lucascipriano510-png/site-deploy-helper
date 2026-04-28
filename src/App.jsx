@@ -1781,6 +1781,15 @@ function App() {
   useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchQuery, selectedSize, activeCollectionFilter]);
   // Se a página atual ficar fora do range (ex.: filtro reduziu lista), corrige.
   useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [totalPages, currentPage]);
+  // Espelha a página atual na URL (?page=N) para sobreviver a recargas.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    if (currentPage <= 1) sp.delete('page'); else sp.set('page', String(currentPage));
+    const qs = sp.toString();
+    const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+    window.history.replaceState(null, '', newUrl);
+  }, [currentPage]);
 
   const availableSizes = useMemo(() => {
     const set = new Set();
