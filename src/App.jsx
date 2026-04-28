@@ -1610,7 +1610,14 @@ function App() {
     }
   };
 
-  const handleLogout = async () => {
+  // "Sair" do painel: apenas volta para a aba do cliente, mantendo a sessão
+  // salva no dispositivo. Para deslogar de verdade use handleFullLogout.
+  const handleLogout = () => {
+    setIsAdmin(false);
+  };
+
+  // Logout real (encerra a sessão no Supabase). Disponível caso precise.
+  const handleFullLogout = async () => {
     try { await supabase.auth.signOut(); } catch (e) {}
     setIsAdmin(false);
   };
