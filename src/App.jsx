@@ -1812,7 +1812,7 @@ function App() {
   if (isAdmin) {
     return (
       <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 pb-20 selection:bg-emerald-500 selection:text-zinc-950">
-        <AdminHeader handleLogout={handleLogout} />
+        <AdminHeader handleLogout={handleLogout} handleBackToStore={handleBackToStore} />
         <main className="max-w-md mx-auto">
           <AdminTabErrorBoundary resetKey={adminTab}>
             {adminTab === 'dashboard' && <AdminDashboard leads={leads} products={products} />}
