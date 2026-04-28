@@ -1504,7 +1504,13 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSize, setSelectedSize] = useState('TODOS');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(() => {
+    // Restaura a página a partir da URL (?page=N) — sobrevive ao reload.
+    if (typeof window === 'undefined') return 1;
+    const sp = new URLSearchParams(window.location.search);
+    const n = parseInt(sp.get('page') || '1', 10);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  });
   const PRODUCTS_PER_PAGE = 20;
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [myOrdersPhone, setMyOrdersPhone] = useState('');
