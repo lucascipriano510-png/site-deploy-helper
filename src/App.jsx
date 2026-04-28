@@ -1499,6 +1499,8 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSize, setSelectedSize] = useState('TODOS');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PRODUCTS_PER_PAGE = 20;
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [myOrdersPhone, setMyOrdersPhone] = useState('');
   const [myOrdersResults, setMyOrdersResults] = useState(null);
