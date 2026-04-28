@@ -1760,6 +1760,17 @@ function App() {
     });
   }, [selectedCategory, searchQuery, selectedSize, products, activeCollectionFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * PRODUCTS_PER_PAGE;
+    return filteredProducts.slice(start, start + PRODUCTS_PER_PAGE);
+  }, [filteredProducts, currentPage]);
+
+  // Sempre que os filtros/busca mudarem, volta para a primeira página.
+  useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchQuery, selectedSize, activeCollectionFilter]);
+  // Se a página atual ficar fora do range (ex.: filtro reduziu lista), corrige.
+  useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [totalPages, currentPage]);
+
   const availableSizes = useMemo(() => {
     const set = new Set();
     (products || []).forEach(p => {
