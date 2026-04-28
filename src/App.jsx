@@ -1992,8 +1992,9 @@ function App() {
                <p className="text-[10px] text-zinc-600 uppercase mt-2">Tente buscar por outro termo ou categoria.</p>
            </div>
         ) : (
+           <>
            <div className="grid grid-cols-2 gap-4" data-testid="products-grid">
-             {filteredProducts.map((product, idx) => {
+             {paginatedProducts.map((product, idx) => {
                const isOutOfStock = product.stock <= 0;
                return (
                  <div key={product.id} onClick={() => handleProductClick(product)} style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }} className={`card-enter group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`} data-testid={`product-card-${product.id}`}>
@@ -2022,6 +2023,31 @@ function App() {
                )
              })}
            </div>
+
+           {totalPages > 1 && (
+             <div className="flex items-center justify-between gap-3 pt-8 pb-2 animate-in" data-testid="pagination-controls">
+               <button
+                 onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                 disabled={currentPage <= 1}
+                 className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
+                 data-testid="pagination-prev"
+               >
+                 ← Anterior
+               </button>
+               <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 whitespace-nowrap px-2" data-testid="pagination-info">
+                 <span className="text-white">{currentPage}</span> <span className="text-zinc-600">/</span> {totalPages}
+               </div>
+               <button
+                 onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                 disabled={currentPage >= totalPages}
+                 className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
+                 data-testid="pagination-next"
+               >
+                 Próxima →
+               </button>
+             </div>
+           )}
+           </>
         )}
       </main>
 
