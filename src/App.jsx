@@ -2058,7 +2058,7 @@ function App() {
                  <span className="text-white">{currentPage}</span> <span className="text-zinc-600">/</span> {totalPages}
                </div>
                <button
-                 onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })); }}
                  disabled={currentPage >= totalPages}
                  className="flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/10 bg-zinc-900/60 text-white hover:bg-white hover:text-zinc-950 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-900/60 disabled:hover:text-white touch-manipulation"
                  data-testid="pagination-next"
