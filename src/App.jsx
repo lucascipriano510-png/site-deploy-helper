@@ -1516,9 +1516,10 @@ function App() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [whatsappLink, setWhatsappLink] = useState('');
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
-  const [currentBannerSlide, setCurrentBannerSlide] = useState(0);
-  const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
-  const [adminTab, setAdminTab] = useState('dashboard'); 
+  const [currentBannerSlide, setCurrentBannerSlide] = useState(0);  const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
+  const [showMyOrders, setShowMyOrders] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   // Referência para o clique duplo
   const lastTapRef = useRef(0);
@@ -1751,6 +1752,17 @@ function App() {
     });
   }, [selectedCategory, searchQuery, selectedSize, products, activeCollectionFilter]);
 
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredProducts, currentPage]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery, selectedSize, activeCollectionFilter]);
+
   const availableSizes = useMemo(() => {
     const set = new Set();
     (products || []).forEach(p => {
@@ -1972,35 +1984,78 @@ function App() {
                <p className="text-[10px] text-zinc-600 uppercase mt-2">Tente buscar por outro termo ou categoria.</p>
            </div>
         ) : (
-           <div className="grid grid-cols-2 gap-4" data-testid="products-grid">
-             {filteredProducts.map((product, idx) => {
-               const isOutOfStock = product.stock <= 0;
-               return (
-                 <div key={product.id} onClick={() => handleProductClick(product)} style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }} className={`card-enter group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`} data-testid={`product-card-${product.id}`}>
-                   
-                   {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
-                   {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
-                   
-                   <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+           <div className="space-y-8">
+             <div className="grid grid-cols-2 gap-4" data-testid="products-grid">
+               {paginatedProducts.map((product, idx) => {
+                 const isOutOfStock = product.stock <= 0;
+                 return (
+                   <div key={product.id} onClick={() => handleProductClick(product)} style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }} className={`card-enter group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/5 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`} data-testid={`product-card-${product.id}`}>
                      
-                     {isOutOfStock && (
-                        <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
-                            <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
-                        </div>
-                     )}
+                     {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
+                     {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
+                     
+                     <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
+                       <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+                       
+                       {isOutOfStock && (
+                          <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
+                              <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
+                          </div>
+                       )}
 
-                     {!isOutOfStock && (
-                        <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
-                     )}
+                       {!isOutOfStock && (
+                          <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
+                       )}
+                     </div>
+                     <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
+                       <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
+                       <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
+                     </div>
                    </div>
-                   <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
-                     <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
-                     <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
-                   </div>
+                 )
+               })}
+             </div>
+
+             {totalPages > 1 && (
+               <div className="flex items-center justify-center gap-2 py-4 animate-in">
+                 <button 
+                   disabled={currentPage === 1}
+                   onClick={() => {
+                     setCurrentPage(prev => Math.max(1, prev - 1));
+                     document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                   }}
+                   className="p-3 rounded-xl bg-zinc-900 border border-white/5 text-zinc-400 disabled:opacity-20 active:scale-95 transition-all"
+                 >
+                   <ChevronLeft size={20} />
+                 </button>
+                 
+                 <div className="flex items-center gap-1.5">
+                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                     <button
+                       key={page}
+                       onClick={() => {
+                         setCurrentPage(page);
+                         document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                       }}
+                       className={`w-10 h-10 rounded-xl font-black text-[10px] transition-all active:scale-95 ${currentPage === page ? 'bg-emerald-500 text-zinc-950 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-zinc-900 text-zinc-500 border border-white/5'}`}
+                     >
+                       {page}
+                     </button>
+                   ))}
                  </div>
-               )
-             })}
+
+                 <button 
+                   disabled={currentPage === totalPages}
+                   onClick={() => {
+                     setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                     document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+                   }}
+                   className="p-3 rounded-xl bg-zinc-900 border border-white/5 text-zinc-400 disabled:opacity-20 active:scale-95 transition-all"
+                 >
+                   <ChevronRight size={20} />
+                 </button>
+               </div>
+             )}
            </div>
         )}
       </main>
