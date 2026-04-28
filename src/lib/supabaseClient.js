@@ -13,49 +13,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[supabase] Credenciais ausentes. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.')
 }
 
-// Storage seguro: usa localStorage quando disponível (web normal),
-// com fallback em memória para ambientes sem window (SSR/preview server).
-const safeStorage = (() => {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      // Smoke test (modo privado do Safari pode lançar)
-      const k = '__fluxo_ls_test__';
-      window.localStorage.setItem(k, '1');
-      window.localStorage.removeItem(k);
-      return window.localStorage;
-    }
-  } catch (e) {}
-  const mem = new Map();
-  return {
-    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-    setItem: (k, v) => { mem.set(k, String(v)); },
-    removeItem: (k) => { mem.delete(k); },
-  };
-})();
-
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    // Sessão persistente entre recarregamentos / fechar e abrir o navegador.
-    // O Supabase auto-renova o access token usando o refresh token salvo,
-    // então o admin só precisa logar uma vez por dispositivo.
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
-    storage: safeStorage,
-    // Mantemos a storageKey padrão do Supabase para não invalidar sessões
-    // que já existiam antes desta configuração explícita.
   },
 })
-
-// Debug: mostra no console se uma sessão foi restaurada do storage.
-if (typeof window !== 'undefined') {
-  supabase.auth.getSession().then(({ data, error }) => {
-    if (error) {
-      console.warn('[auth] erro ao restaurar sessão:', error.message);
-    } else if (data?.session?.user) {
-      console.log('[auth] sessão restaurada para', data.session.user.email);
-    } else {
-      console.log('[auth] nenhuma sessão salva (login necessário)');
-    }
-  });
-}
