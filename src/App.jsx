@@ -1516,8 +1516,6 @@ function App() {
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [whatsappLink, setWhatsappLink] = useState('');
   const [checkoutOrderNumber, setCheckoutOrderNumber] = useState('');
-  const [currentBannerSlide, setCurrentBannerSlide] = useState(0);  const [activeCollectionFilter, setActiveCollectionFilter] = useState(null);
-  const [showMyOrders, setShowMyOrders] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
