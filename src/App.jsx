@@ -116,7 +116,7 @@ const trackPixel = (eventName, payload) => {
 // 3. COMPONENTES ADMIN DESACOPLADOS
 // ==========================================
 
-const AdminHeader = ({ handleLogout }) => (
+const AdminHeader = ({ handleLogout, handleBackToStore }) => (
   <div className="bg-zinc-950 text-white px-6 py-6 flex justify-between items-center sticky top-0 z-50 border-b border-white/5">
     <div className="flex items-center gap-3">
       <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] relative overflow-hidden">
@@ -128,9 +128,14 @@ const AdminHeader = ({ handleLogout }) => (
         <p className="text-[9px] font-bold text-zinc-500 tracking-[0.2em] uppercase flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Operacional</p>
       </div>
     </div>
-    <button onClick={handleLogout} className="px-4 py-2 bg-white text-zinc-950 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
-      Sair <LogOut size={12} />
-    </button>
+    <div className="flex items-center gap-2">
+      <button onClick={handleBackToStore} title="Voltar para a loja sem deslogar" className="px-3 py-2 bg-white/5 border border-white/10 text-white rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-white/10 transition-colors flex items-center gap-2" data-testid="admin-back-to-store">
+        <ArrowLeft size={12} /> Loja
+      </button>
+      <button onClick={handleLogout} className="px-4 py-2 bg-white text-zinc-950 rounded-full font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-colors flex items-center gap-2 shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+        Sair <LogOut size={12} />
+      </button>
+    </div>
   </div>
 );
 
