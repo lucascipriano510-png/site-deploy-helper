@@ -2102,28 +2102,42 @@ function App() {
                          const visible = avail.slice(0, 4);
                          const extra = avail.length - visible.length;
                          return (
-                           <>
-                             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                             <div className="absolute inset-x-2 bottom-2 flex flex-wrap gap-1 justify-center" data-testid={`product-sizes-${product.id}`}>
-                               {visible.map(s => (
-                                 <span
-                                   key={s.name}
-                                   className="text-[9px] font-black uppercase tracking-[0.12em] px-2 py-[3px] rounded-full bg-white/15 text-white border border-white/25 shadow-[0_2px_8px_rgba(0,0,0,0.35)]"
-                                   style={{ backdropFilter: 'blur(10px) saturate(140%)', WebkitBackdropFilter: 'blur(10px) saturate(140%)' }}
-                                 >
-                                   {s.name}
-                                 </span>
-                               ))}
-                               {extra > 0 && (
-                                 <span
-                                   className="text-[9px] font-black uppercase tracking-[0.12em] px-2 py-[3px] rounded-full bg-white/10 text-white/80 border border-white/20 shadow-[0_2px_8px_rgba(0,0,0,0.35)]"
-                                   style={{ backdropFilter: 'blur(10px) saturate(140%)', WebkitBackdropFilter: 'blur(10px) saturate(140%)' }}
-                                 >
-                                   +{extra}
-                                 </span>
-                               )}
-                             </div>
-                           </>
+                           <div
+                             className="absolute bottom-2 right-2 flex flex-wrap gap-[3px] justify-end items-center max-w-[70%] px-1.5 py-1 rounded-md bg-white/10 shadow-[0_4px_14px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.18)]"
+                             style={{
+                               backdropFilter: 'blur(12px) saturate(160%)',
+                               WebkitBackdropFilter: 'blur(12px) saturate(160%)',
+                               border: '1px solid rgba(212,175,110,0.55)',
+                             }}
+                             data-testid={`product-sizes-${product.id}`}
+                           >
+                             {visible.map(s => (
+                               <span
+                                 key={s.name}
+                                 className="text-[8.5px] font-black uppercase tracking-[0.1em] px-[5px] py-[2px] rounded-[3px] leading-none"
+                                 style={{
+                                   color: '#f5e6c8',
+                                   border: '1px solid rgba(212,175,110,0.7)',
+                                   background: 'rgba(0,0,0,0.18)',
+                                   textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                                 }}
+                               >
+                                 {s.name}
+                               </span>
+                             ))}
+                             {extra > 0 && (
+                               <span
+                                 className="text-[8.5px] font-black uppercase tracking-[0.1em] px-[5px] py-[2px] rounded-[3px] leading-none"
+                                 style={{
+                                   color: '#f5e6c8',
+                                   border: '1px solid rgba(212,175,110,0.55)',
+                                   background: 'rgba(0,0,0,0.12)',
+                                 }}
+                               >
+                                 +{extra}
+                               </span>
+                             )}
+                           </div>
                          );
                        })()}
 
