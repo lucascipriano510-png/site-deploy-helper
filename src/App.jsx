@@ -2085,41 +2085,56 @@ function App() {
                    {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                    {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                    
-                   <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-                     <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
-                     
-                     {isOutOfStock && (
-                        <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
-                            <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
-                        </div>
-                     )}
+                    <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
+                      <img src={product.image} className={`w-full h-full object-cover transition-all duration-500 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-[1.04] group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
+                      
+                      {isOutOfStock && (
+                         <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
+                             <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
+                         </div>
+                      )}
 
-                     {!isOutOfStock && (
-                        <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
-                     )}
-                   </div>
-                    <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
-                      <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
-                      <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
                       {!isOutOfStock && (() => {
-                        const avail = (product.sizes || [])
-                          .map(s => ({ name: typeof s === 'string' ? s : s.size, stock: typeof s === 'string' ? (product.stock || 0) : Number(s.stock || 0) }))
-                          .filter(s => s.name && s.stock > 0);
-                        if (avail.length === 0) return null;
-                        const visible = avail.slice(0, 4);
-                        const extra = avail.length - visible.length;
-                        return (
-                          <div className="flex flex-wrap gap-1 mt-2.5 pt-2.5 border-t border-white/5" data-testid={`product-sizes-${product.id}`}>
-                            {visible.map(s => (
-                              <span key={s.name} className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-white/5 text-zinc-300 border border-white/10">{s.name}</span>
-                            ))}
-                            {extra > 0 && (
-                              <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-white/5 text-zinc-500 border border-white/10">+{extra}</span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                         const avail = (product.sizes || [])
+                           .map(s => ({ name: typeof s === 'string' ? s : s.size, stock: typeof s === 'string' ? (product.stock || 0) : Number(s.stock || 0) }))
+                           .filter(s => s.name && s.stock > 0);
+                         if (avail.length === 0) return null;
+                         const visible = avail.slice(0, 4);
+                         const extra = avail.length - visible.length;
+                         return (
+                           <>
+                             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                             <div className="absolute inset-x-2 bottom-2 flex flex-wrap gap-1 justify-center" data-testid={`product-sizes-${product.id}`}>
+                               {visible.map(s => (
+                                 <span
+                                   key={s.name}
+                                   className="text-[9px] font-black uppercase tracking-[0.12em] px-2 py-[3px] rounded-full bg-white/15 text-white border border-white/25 shadow-[0_2px_8px_rgba(0,0,0,0.35)]"
+                                   style={{ backdropFilter: 'blur(10px) saturate(140%)', WebkitBackdropFilter: 'blur(10px) saturate(140%)' }}
+                                 >
+                                   {s.name}
+                                 </span>
+                               ))}
+                               {extra > 0 && (
+                                 <span
+                                   className="text-[9px] font-black uppercase tracking-[0.12em] px-2 py-[3px] rounded-full bg-white/10 text-white/80 border border-white/20 shadow-[0_2px_8px_rgba(0,0,0,0.35)]"
+                                   style={{ backdropFilter: 'blur(10px) saturate(140%)', WebkitBackdropFilter: 'blur(10px) saturate(140%)' }}
+                                 >
+                                   +{extra}
+                                 </span>
+                               )}
+                             </div>
+                           </>
+                         );
+                       })()}
+
+                      {!isOutOfStock && (
+                         <div className="absolute top-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-[-4px] group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
+                      )}
                     </div>
+                     <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
+                       <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
+                       <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
+                     </div>
                  </div>
                )
              })}
