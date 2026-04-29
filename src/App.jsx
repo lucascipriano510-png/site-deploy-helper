@@ -2058,10 +2058,28 @@ function App() {
                         <div className="absolute bottom-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
                      )}
                    </div>
-                   <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
-                     <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
-                     <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
-                   </div>
+                    <div className="p-4 bg-zinc-950/50 flex-1 flex flex-col justify-between">
+                      <h3 className="font-black text-zinc-300 text-[10px] uppercase line-clamp-2 leading-tight group-hover:text-white transition-colors">{product.name}</h3>
+                      <p className={`font-black text-sm mt-2 ${isOutOfStock ? 'text-zinc-600 line-through' : 'text-white'}`}>R$ {(product.price || 0).toFixed(2)}</p>
+                      {!isOutOfStock && (() => {
+                        const avail = (product.sizes || [])
+                          .map(s => ({ name: typeof s === 'string' ? s : s.size, stock: typeof s === 'string' ? (product.stock || 0) : Number(s.stock || 0) }))
+                          .filter(s => s.name && s.stock > 0);
+                        if (avail.length === 0) return null;
+                        const visible = avail.slice(0, 4);
+                        const extra = avail.length - visible.length;
+                        return (
+                          <div className="flex flex-wrap gap-1 mt-2.5 pt-2.5 border-t border-white/5" data-testid={`product-sizes-${product.id}`}>
+                            {visible.map(s => (
+                              <span key={s.name} className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-white/5 text-zinc-300 border border-white/10">{s.name}</span>
+                            ))}
+                            {extra > 0 && (
+                              <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-white/5 text-zinc-500 border border-white/10">+{extra}</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                  </div>
                )
              })}
