@@ -23,6 +23,7 @@ export async function upsertProduct(product) {
     name: product.name || '',
     price: Number(product.price || 0),
     category: product.category || 'GERAL',
+    subcategory: product.subcategory || null,
     image: product.image || '',
     stock: Number(product.stock || 0),
     sales: Number(product.sales || 0),
