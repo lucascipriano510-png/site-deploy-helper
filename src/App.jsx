@@ -2032,6 +2032,14 @@ function App() {
           ))}
         </div>
 
+        {availableSubcategories.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar mask-linear touch-pan-x items-center" data-testid="subcategory-bar">
+            {availableSubcategories.map(sub => (
+              <button key={sub} onClick={() => setSelectedSubcategory(sub)} data-testid={`subcategory-filter-${sub}`} className={`px-3.5 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap border transition-all touch-manipulation ${selectedSubcategory === sub ? 'bg-white/90 text-zinc-950 border-white' : 'bg-transparent text-zinc-500 border-white/10 hover:text-white hover:border-white/30'}`}>{sub === 'TODOS' ? 'Todas subcategorias' : sub}</button>
+            ))}
+          </div>
+        )}
+
         {activeCollectionFilter && (
           <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl animate-in">
             <div className="flex flex-col">
