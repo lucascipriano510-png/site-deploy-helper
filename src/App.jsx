@@ -451,6 +451,7 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
         name: fd.get('name'),
         price: parseFloat(fd.get('price')),
         category: fd.get('category').toUpperCase(),
+        subcategory: (fd.get('subcategory') || '').toString().trim().toUpperCase() || null,
         collection_name: fd.get('collection_name') || null,
         image: imageUrl,
         stock: computedStock, 
@@ -704,9 +705,13 @@ const AdminInventory = ({ products, setProducts, showToast, availableCollections
                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Preço (R$)</label>
                <input name="price" type="number" step="0.01" defaultValue={editMode?.price} className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl font-bold text-sm text-white focus:border-emerald-500/50 outline-none" required />
             </div>
-            <div className="col-span-2 space-y-1">
+             <div className="col-span-2 space-y-1">
                <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Categoria</label>
 	              <input name="category" defaultValue={editMode?.category} placeholder="Categoria (ex: VESTUÁRIO)" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" required />
+	            </div>
+	            <div className="col-span-2 space-y-1">
+	               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Subcategoria (Opcional)</label>
+	              <input name="subcategory" defaultValue={editMode?.subcategory || ''} placeholder="Ex: CALÇA JOGADOR" className="w-full p-4 bg-zinc-950 border border-white/5 rounded-2xl text-sm text-white outline-none uppercase" />
 	            </div>
 	            <div className="col-span-2 space-y-1">
 	               <label className="text-[9px] font-black text-zinc-500 uppercase px-2">Vincular à Coleção (Opcional)</label>
@@ -1502,6 +1507,7 @@ function App() {
   }, []);
 
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('TODOS');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSize, setSelectedSize] = useState('TODOS');
   const [currentPage, setCurrentPage] = useState(() => {
@@ -1772,6 +1778,7 @@ function App() {
     return (products || []).filter(p => {
       if (p.stock <= 0) return false;
       const matchesCat = selectedCategory === 'TODOS' || p.category === selectedCategory;
+      const matchesSub = selectedSubcategory === 'TODOS' || (p.subcategory || '').toUpperCase() === selectedSubcategory;
       const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchesSize = selectedSize === 'TODOS' || (Array.isArray(p.sizes) && p.sizes.some(s => {
         const sName = typeof s === 'string' ? s : s.size;
@@ -1779,9 +1786,32 @@ function App() {
         return sName === selectedSize && sStock > 0;
       }));
       const matchesCollection = !activeCollectionFilter || p.collection_name === activeCollectionFilter;
-      return matchesCat && matchesSearch && matchesSize && matchesCollection;
+      return matchesCat && matchesSub && matchesSearch && matchesSize && matchesCollection;
     });
-  }, [selectedCategory, searchQuery, selectedSize, products, activeCollectionFilter]);
+  }, [selectedCategory, selectedSubcategory, searchQuery, selectedSize, products, activeCollectionFilter]);
+
+  // Subcategorias disponíveis dentro da categoria atual (ignora produtos sem estoque)
+  const availableSubcategories = useMemo(() => {
+    const set = new Set();
+    (products || []).forEach(p => {
+      if (p.stock <= 0) return;
+      if (selectedCategory !== 'TODOS' && p.category !== selectedCategory) return;
+      if (activeCollectionFilter && p.collection_name !== activeCollectionFilter) return;
+      const sub = (p.subcategory || '').toString().trim().toUpperCase();
+      if (sub) set.add(sub);
+    });
+    return ['TODOS', ...Array.from(set)];
+  }, [products, selectedCategory, activeCollectionFilter]);
+
+  // Se a subcategoria selecionada deixar de existir após trocar de categoria, reseta
+  useEffect(() => {
+    if (selectedSubcategory !== 'TODOS' && !availableSubcategories.includes(selectedSubcategory)) {
+      setSelectedSubcategory('TODOS');
+    }
+  }, [availableSubcategories, selectedSubcategory]);
+
+  // Ao trocar de categoria, sempre limpa a subcategoria
+  useEffect(() => { setSelectedSubcategory('TODOS'); }, [selectedCategory]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
   const paginatedProducts = useMemo(() => {
@@ -1790,7 +1820,7 @@ function App() {
   }, [filteredProducts, currentPage]);
 
   // Sempre que os filtros/busca mudarem, volta para a primeira página.
-  useEffect(() => { setCurrentPage(1); }, [selectedCategory, searchQuery, selectedSize, activeCollectionFilter]);
+  useEffect(() => { setCurrentPage(1); }, [selectedCategory, selectedSubcategory, searchQuery, selectedSize, activeCollectionFilter]);
   // Se a página atual ficar fora do range (ex.: filtro reduziu lista), corrige.
   useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [totalPages, currentPage]);
   // Espelha a página atual na URL (?page=N) para sobreviver a recargas.
