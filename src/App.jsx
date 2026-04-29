@@ -1839,6 +1839,8 @@ function App() {
       if (p.stock <= 0) return;
       // Filtra apenas pelos produtos da categoria atualmente selecionada
       if (selectedCategory !== 'TODOS' && p.category !== selectedCategory) return;
+      // Respeita também a subcategoria selecionada
+      if (selectedSubcategory !== 'TODOS' && (p.subcategory || '').toUpperCase() !== selectedSubcategory) return;
       // Respeita também o filtro de coleção ativo (banner)
       if (activeCollectionFilter && p.collection_name !== activeCollectionFilter) return;
       (p.sizes || []).forEach(s => {
@@ -1848,7 +1850,7 @@ function App() {
       });
     });
     return ['TODOS', ...Array.from(set)];
-  }, [products, selectedCategory, activeCollectionFilter]);
+  }, [products, selectedCategory, selectedSubcategory, activeCollectionFilter]);
 
   // Se a categoria mudar e o tamanho selecionado não existir mais, volta para "TODOS"
   useEffect(() => {
