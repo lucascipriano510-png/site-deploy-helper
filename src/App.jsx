@@ -1807,6 +1807,10 @@ function App() {
     const set = new Set();
     (products || []).forEach(p => {
       if (p.stock <= 0) return;
+      // Filtra apenas pelos produtos da categoria atualmente selecionada
+      if (selectedCategory !== 'TODOS' && p.category !== selectedCategory) return;
+      // Respeita também o filtro de coleção ativo (banner)
+      if (activeCollectionFilter && p.collection_name !== activeCollectionFilter) return;
       (p.sizes || []).forEach(s => {
         const sName = typeof s === 'string' ? s : s.size;
         const sStock = typeof s === 'string' ? (p.stock || 0) : Number(s.stock || 0);
@@ -1814,7 +1818,14 @@ function App() {
       });
     });
     return ['TODOS', ...Array.from(set)];
-  }, [products]);
+  }, [products, selectedCategory, activeCollectionFilter]);
+
+  // Se a categoria mudar e o tamanho selecionado não existir mais, volta para "TODOS"
+  useEffect(() => {
+    if (selectedSize !== 'TODOS' && !availableSizes.includes(selectedSize)) {
+      setSelectedSize('TODOS');
+    }
+  }, [availableSizes, selectedSize]);
 
   const handleSearchMyOrders = async () => {
     const phone = String(myOrdersPhone || '').replace(/\D/g, '');
