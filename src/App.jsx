@@ -2084,10 +2084,10 @@ function App() {
                   <motion.div
                     key={product.id}
                     onClick={() => handleProductClick(product)}
-                     initial={{ opacity: 0.01, y: 20 }}
-                     whileInView={{ opacity: 1, y: 0 }}
-                     viewport={{ once: true, amount: 0.1 }}
-                     transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                      initial={{ opacity: 0.01, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "50px" }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
                     className={`group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/10 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`}
                     data-testid={`product-card-${product.id}`}
                   >
