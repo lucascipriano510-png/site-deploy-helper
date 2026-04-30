@@ -2112,24 +2112,24 @@ function App() {
                            const visible = avail.slice(0, 4);
                            const extra = avail.length - visible.length;
                            return (
-                             <div
-                               className="absolute bottom-0 left-0 flex gap-[1px]"
-                               data-testid={`product-sizes-${product.id}`}
-                             >
-                               {visible.map(s => (
-                                 <span
-                                   key={s.name}
-                                   className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400"
-                                 >
-                                   {s.name}
-                                 </span>
-                               ))}
-                               {extra > 0 && (
-                                 <span className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400">
-                                   +{extra}
-                                 </span>
-                               )}
-                             </div>
+                              <div
+                                className="absolute bottom-2 left-2 flex gap-[2px] z-10"
+                                data-testid={`product-sizes-${product.id}`}
+                              >
+                                {visible.map(s => (
+                                  <span
+                                    key={s.name}
+                                    className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]"
+                                  >
+                                    {s.name}
+                                  </span>
+                                ))}
+                                {extra > 0 && (
+                                  <span className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
+                                    +{extra}
+                                  </span>
+                                )}
+                              </div>
                            );
                          })()}
 
