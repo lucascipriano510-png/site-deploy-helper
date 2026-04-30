@@ -2111,26 +2111,35 @@ function App() {
                            if (avail.length === 0) return null;
                            const visible = avail.slice(0, 4);
                            const extra = avail.length - visible.length;
-                           return (
-                              <div
-                                className="absolute bottom-2 left-2 flex gap-[2px] z-10"
-                                data-testid={`product-sizes-${product.id}`}
-                              >
-                                {visible.map(s => (
-                                  <span
-                                    key={s.name}
-                                    className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]"
-                                  >
-                                    {s.name}
-                                  </span>
-                                ))}
-                                {extra > 0 && (
-                                  <span className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
-                                    +{extra}
-                                  </span>
-                                )}
-                              </div>
-                           );
+                            return (
+                               <div
+                                 className="absolute bottom-0 left-0 z-10 flex overflow-hidden bg-white/10 backdrop-blur-md border-t border-r border-white/20 rounded-tr-md shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+                                 data-testid={`product-sizes-${product.id}`}
+                               >
+                                 <style>{`
+                                   @keyframes shineSize {
+                                     0% { transform: translateX(-150%) skewX(-15deg); }
+                                     20%, 100% { transform: translateX(200%) skewX(-15deg); }
+                                   }
+                                 `}</style>
+                                 <span className="pointer-events-none absolute inset-0 overflow-hidden">
+                                   <span className="absolute top-0 left-0 h-full w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent" style={{ animation: 'shineSize 4s ease-in-out infinite' }} />
+                                 </span>
+                                 {visible.map(s => (
+                                   <span
+                                     key={s.name}
+                                     className="relative w-[22px] h-[22px] flex items-center justify-center text-[10px] font-bold text-white/95 border-r border-white/10 last:border-r-0"
+                                   >
+                                     {s.name}
+                                   </span>
+                                 ))}
+                                 {extra > 0 && (
+                                   <span className="relative w-[22px] h-[22px] flex items-center justify-center text-[10px] font-bold text-white/95">
+                                     +{extra}
+                                   </span>
+                                 )}
+                               </div>
+                            );
                          })()}
 
                        {!isOutOfStock && (
