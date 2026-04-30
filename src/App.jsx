@@ -2113,19 +2113,19 @@ function App() {
                            const extra = avail.length - visible.length;
                            return (
                              <div
-                               className="absolute bottom-2 left-2 flex gap-1 z-10"
+                               className="absolute bottom-0 left-0 flex gap-[1px]"
                                data-testid={`product-sizes-${product.id}`}
                              >
                                {visible.map(s => (
                                  <span
                                    key={s.name}
-                                   className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md"
+                                   className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400"
                                  >
                                    {s.name}
                                  </span>
                                ))}
                                {extra > 0 && (
-                                 <span className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md">
+                                 <span className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400">
                                    +{extra}
                                  </span>
                                )}
