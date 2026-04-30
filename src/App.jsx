@@ -2085,9 +2085,9 @@ function App() {
                     key={product.id}
                     onClick={() => handleProductClick(product)}
                       initial={{ opacity: 0.01, y: 20 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, margin: "50px" }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
+                       whileInView={{ opacity: 1, y: 0 }}
+                       viewport={{ once: true, margin: "100px" }}
+                       transition={{ duration: 0.5, ease: "easeOut" }}
                     className={`group relative bg-zinc-900/40 backdrop-blur-sm rounded-[24px] overflow-hidden border border-white/10 transition-all duration-300 flex flex-col shadow-lg touch-manipulation ${isOutOfStock ? 'opacity-80' : 'hover:border-white/20 hover:-translate-y-0.5 cursor-pointer active:scale-[0.98]'}`}
                     data-testid={`product-card-${product.id}`}
                   >
@@ -2095,7 +2095,7 @@ function App() {
                     {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                     {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                     
-                      <div className="aspect-[4/5] bg-zinc-900/20 relative overflow-hidden">
+                      <div className="aspect-[4/5] bg-zinc-900/50 relative overflow-hidden">
                         <img src={product.image} loading="lazy" decoding="async" className={`w-full h-full object-cover transition-transform duration-700 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-105 group-hover:opacity-100'}`} alt={product.name} />
                         
                         {isOutOfStock && (
@@ -2111,26 +2111,35 @@ function App() {
                            if (avail.length === 0) return null;
                            const visible = avail.slice(0, 4);
                            const extra = avail.length - visible.length;
-                           return (
-                              <div
-                                className="absolute bottom-2 left-2 flex gap-[2px] z-10"
-                                data-testid={`product-sizes-${product.id}`}
-                              >
-                                {visible.map(s => (
-                                  <span
-                                    key={s.name}
-                                    className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]"
-                                  >
-                                    {s.name}
-                                  </span>
-                                ))}
-                                {extra > 0 && (
-                                  <span className="w-[24px] h-[24px] flex items-center justify-center text-[10px] font-bold bg-white/10 backdrop-blur-md border border-white/20 text-white/90 rounded-sm shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
-                                    +{extra}
-                                  </span>
-                                )}
-                              </div>
-                           );
+                            return (
+                               <div
+                                 className="absolute bottom-0 left-0 z-10 flex overflow-hidden bg-white/10 backdrop-blur-md border-t border-r border-white/20 rounded-tr-md shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+                                 data-testid={`product-sizes-${product.id}`}
+                               >
+                                 <style>{`
+                                   @keyframes shineSize {
+                                     0% { transform: translateX(-150%) skewX(-15deg); }
+                                     20%, 100% { transform: translateX(200%) skewX(-15deg); }
+                                   }
+                                 `}</style>
+                                 <span className="pointer-events-none absolute inset-0 overflow-hidden">
+                                   <span className="absolute top-0 left-0 h-full w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent" style={{ animation: 'shineSize 4s ease-in-out infinite' }} />
+                                 </span>
+                                 {visible.map(s => (
+                                   <span
+                                     key={s.name}
+                                     className="relative w-[22px] h-[22px] flex items-center justify-center text-[10px] font-bold text-white/95 border-r border-white/10 last:border-r-0"
+                                   >
+                                     {s.name}
+                                   </span>
+                                 ))}
+                                 {extra > 0 && (
+                                   <span className="relative w-[22px] h-[22px] flex items-center justify-center text-[10px] font-bold text-white/95">
+                                     +{extra}
+                                   </span>
+                                 )}
+                               </div>
+                            );
                          })()}
 
                        {!isOutOfStock && (
