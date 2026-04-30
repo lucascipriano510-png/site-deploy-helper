@@ -2095,7 +2095,7 @@ function App() {
                     {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                     {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                     
-                      <div className="aspect-[3/4] relative bg-zinc-900 animate-pulse overflow-hidden">
+                      <div className="aspect-[3/4] relative overflow-hidden">
                         <img src={product.image} loading="lazy" decoding="async" className={`w-full h-full object-cover transition-transform duration-700 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-105 group-hover:opacity-100'}`} alt={product.name} />
                         
                         {isOutOfStock && (
@@ -2113,19 +2113,19 @@ function App() {
                            const extra = avail.length - visible.length;
                            return (
                              <div
-                               className="absolute bottom-2 left-2 flex gap-1 z-10"
+                               className="absolute bottom-0 left-0 flex gap-[1px]"
                                data-testid={`product-sizes-${product.id}`}
                              >
                                {visible.map(s => (
                                  <span
                                    key={s.name}
-                                   className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md"
+                                   className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400"
                                  >
                                    {s.name}
                                  </span>
                                ))}
                                {extra > 0 && (
-                                 <span className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md">
+                                 <span className="w-[20px] h-[20px] flex items-center justify-center text-[9px] font-black bg-zinc-300 text-black border-t border-r border-zinc-400">
                                    +{extra}
                                  </span>
                                )}
