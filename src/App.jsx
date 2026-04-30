@@ -2095,43 +2095,43 @@ function App() {
                     {!isOutOfStock && product.stock <= 3 && <div className="absolute top-2 left-2 z-10 bg-amber-500 text-zinc-950 text-[8px] font-black uppercase px-2 py-1 rounded-md animate-pulse" data-testid={`badge-last-pieces-${product.id}`}>Restam {product.stock}</div>}
                     {!isOutOfStock && (product.sales || 0) >= 10 && <div className="absolute top-2 right-2 z-10 bg-gradient-to-r from-red-600 to-red-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.5)] flex items-center gap-1" data-testid={`badge-best-seller-${product.id}`}><Flame size={9}/> Top</div>}
                     
-                     <div className="aspect-[3/4] relative bg-zinc-900 overflow-hidden">
-                       <img src={product.image} className={`w-full h-full object-cover transition-transform duration-700 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-105 group-hover:opacity-100'}`} loading="lazy" alt={product.name} />
-                       
-                       {isOutOfStock && (
-                          <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
-                              <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
-                          </div>
-                       )}
+                      <div className="aspect-[3/4] relative bg-zinc-900 animate-pulse overflow-hidden">
+                        <img src={product.image} loading="lazy" decoding="async" className={`w-full h-full object-cover transition-transform duration-700 ${isOutOfStock ? 'grayscale opacity-40' : 'opacity-95 group-hover:scale-105 group-hover:opacity-100'}`} alt={product.name} />
+                        
+                        {isOutOfStock && (
+                           <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-[2px] flex items-center justify-center">
+                               <span className="bg-zinc-950 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border border-white/20 shadow-2xl">Esgotado</span>
+                           </div>
+                        )}
 
-                       {!isOutOfStock && (() => {
-                          const avail = (product.sizes || [])
-                            .map(s => ({ name: typeof s === 'string' ? s : s.size, stock: typeof s === 'string' ? (product.stock || 0) : Number(s.stock || 0) }))
-                            .filter(s => s.name && s.stock > 0);
-                          if (avail.length === 0) return null;
-                          const visible = avail.slice(0, 4);
-                          const extra = avail.length - visible.length;
-                          return (
-                            <div
-                              className="absolute bottom-3 right-3 flex flex-wrap gap-1 justify-end items-center max-w-[75%] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 shadow-lg"
-                              data-testid={`product-sizes-${product.id}`}
-                            >
-                              {visible.map(s => (
-                                <span
-                                  key={s.name}
-                                  className="text-[9px] font-bold uppercase tracking-wider text-white leading-none px-1"
-                                >
-                                  {s.name}
-                                </span>
-                              ))}
-                              {extra > 0 && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-white/70 leading-none px-1">
-                                  +{extra}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {!isOutOfStock && (() => {
+                           const avail = (product.sizes || [])
+                             .map(s => ({ name: typeof s === 'string' ? s : s.size, stock: typeof s === 'string' ? (product.stock || 0) : Number(s.stock || 0) }))
+                             .filter(s => s.name && s.stock > 0);
+                           if (avail.length === 0) return null;
+                           const visible = avail.slice(0, 4);
+                           const extra = avail.length - visible.length;
+                           return (
+                             <div
+                               className="absolute bottom-2 left-2 flex gap-1 z-10"
+                               data-testid={`product-sizes-${product.id}`}
+                             >
+                               {visible.map(s => (
+                                 <span
+                                   key={s.name}
+                                   className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md"
+                                 >
+                                   {s.name}
+                                 </span>
+                               ))}
+                               {extra > 0 && (
+                                 <span className="w-[26px] h-[26px] flex items-center justify-center rounded-sm text-[10px] font-bold bg-zinc-200/95 text-zinc-950 border border-zinc-400 shadow-sm backdrop-blur-md">
+                                   +{extra}
+                                 </span>
+                               )}
+                             </div>
+                           );
+                         })()}
 
                        {!isOutOfStock && (
                           <div className="absolute top-3 right-3 bg-white text-zinc-950 p-2 rounded-full shadow-xl opacity-0 translate-y-[-4px] group-hover:opacity-100 group-hover:translate-y-0 transition-all pointer-events-none"><Plus size={16}/></div>
